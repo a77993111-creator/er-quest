@@ -49,9 +49,13 @@ export class IpassScene extends Phaser.Scene {
     if (opts[k] === ip.err[0]) { this.score += 20; audio.sfx('good'); await this.dlg.say(['○ 抓到了！交班就是要確認對方聽懂。']); }
     else { audio.sfx('bad'); await this.dlg.say(['× 錯誤其實是：', ip.err[0]]); }
 
-    const gain = recordIpass(this.score);
+    const r = recordIpass(this.score);
     audio.sfx(this.score >= 80 ? 'win' : 'save');
-    await this.dlg.say([`交班完成！I-PASS ${this.score} 分，獲得 ${gain} EXP。`, '總醫師：「辛苦了，去值班室休息吧。」']);
+    const lines = [`交班完成！I-PASS ${this.score} 分，獲得 ${r.gain} EXP。`];
+    if (r.coins) lines.push(`完美交班：白袍幣 +${r.coins}`);
+    if (r.notes.length) { lines.push(...r.notes); }
+    lines.push('總醫師：「辛苦了，去值班室休息吧。」');
+    await this.dlg.say(lines);
     await wait(this, 200);
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Map', { fromIpass: true }));

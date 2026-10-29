@@ -30,20 +30,21 @@ export const LOOKS = {
   pt_f:      { hair: '#3a2820', skin: '#f2cdb0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'long' },
   pt_om:     { hair: '#b8b8c0', skin: '#e8c0a0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'short' },
   pt_of:     { hair: '#c0c0c8', skin: '#ecc4a4', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'bun' },
+  shop:      { hair: '#6a4028', skin: '#f2c8a0', top: '#f0c050', topD: '#d0a030', pants: '#58607a', shoe: '#2a2a30', acc: null, style: 'bun' },
   chief:     { hair: '#2a2420', skin: '#f0c49c', top: '#f8f8f8', topD: '#c6cedc', pants: '#605048', shoe: '#2a2a30', acc: '#4a90d0', style: 'long' },
 };
 
 // ---------- 基本繪圖 ----------
-function canvas(w, h) {
+export function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   return [c, ctx];
 }
-function r(ctx, x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
-function dot(ctx, x, y, col) { r(ctx, x, y, 1, 1, col); }
-function ellipse(ctx, cx, cy, rx, ry, col) {
+export function r(ctx, x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+export function dot(ctx, x, y, col) { r(ctx, x, y, 1, 1, col); }
+export function ellipse(ctx, cx, cy, rx, ry, col) {
   ctx.fillStyle = col;
   for (let y = -ry; y <= ry; y++) {
     const w = Math.round(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry))));
@@ -52,7 +53,7 @@ function ellipse(ctx, cx, cy, rx, ry, col) {
 }
 
 // 對不透明區域外圍描 1px 深色外框
-function outline(ctx, w, h, col = C.ink) {
+export function outline(ctx, w, h, col = C.ink) {
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
   const op = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
@@ -199,6 +200,11 @@ function drawObject(ctx, ch, x, y, ox, oy) {
     case 'U':
       r(ctx, ox + 4, oy, 8, 16, C.ink); r(ctx, ox + 5, oy, 6, 15, '#b0b8c8'); r(ctx, ox + 5, oy, 6, 2, C.white);
       break;
+    case 'w': // 置物櫃（更衣室）
+      r(ctx, ox + 1, oy, 14, 16, C.ink); r(ctx, ox + 2, oy + 1, 12, 14, '#8aa0b8');
+      r(ctx, ox + 7, oy + 1, 1, 14, '#5a6a80'); r(ctx, ox + 4, oy + 3, 2, 1, '#5a6a80'); r(ctx, ox + 10, oy + 3, 2, 1, '#5a6a80');
+      dot(ctx, ox + 6, oy + 8, '#f0d060'); dot(ctx, ox + 9, oy + 8, '#f0d060');
+      break;
     case 'r': { // 值班床
       const top = at(x, y - 1) !== 'r';
       r(ctx, ox + 1, oy, 14, 16, C.ink);
@@ -232,7 +238,13 @@ export function bakeMap(scene) {
 }
 
 // ---------- 人物（16×16，四方向 × 3 影格） ----------
-function person(ctx, ox, oy, dir, frame, L) {
+export function drawPerson(ctx, ox, oy, dir, frame, L0, eq = {}) { return person(ctx, ox, oy, dir, frame, L0, eq); }
+
+function person(ctx, ox, oy, dir, frame, L0, eq = {}) {
+  const L = { ...L0 };
+  if (eq.scrub) L.pants = eq.scrub.color;
+  if (eq.shoes) L.shoe = eq.shoes.color;
+  const stethCols = eq.steth ? (Array.isArray(eq.steth.color) ? eq.steth.color : [eq.steth.color]) : (L.acc ? [L.acc] : []);
   const [cv2, c] = canvas(16, 16);
   const side = dir === 'LEFT' || dir === 'RIGHT';
   // 腿
@@ -251,14 +263,20 @@ function person(ctx, ox, oy, dir, frame, L) {
     r(c, 5, 8, 6, 5, L.top); r(c, 5, 11, 6, 2, L.topD);
     const armY = frame === 0 ? 9 : 8;
     r(c, 7, armY, 2, 3, L.topD); r(c, 7, armY + 3, 2, 1, L.skin);
+    if (eq.scrub) { r(c, 7, armY + 2, 2, 1, eq.scrub.color); r(c, 6, 8, 2, 1, eq.scrub.color); }
   } else {
     r(c, 4, 8, 8, 5, L.top); r(c, 4, 12, 8, 1, L.topD);
     r(c, 3, 9, 1, 3, L.top); r(c, 12, 9, 1, 3, L.top);
     r(c, 3, 12, 1, 1, L.skin); r(c, 12, 12, 1, 1, L.skin);
+    if (eq.scrub) { dot(c, 3, 11, eq.scrub.color); dot(c, 12, 11, eq.scrub.color); if (dir === 'UP') r(c, 6, 8, 4, 1, eq.scrub.color); }
     if (dir === 'DOWN') {
-      r(c, 7, 8, 2, 4, L.topD);
+      r(c, 7, 8, 2, 4, eq.scrub ? eq.scrub.color : L.topD);
+      if (eq.scrub) { dot(c, 6, 8, eq.scrub.color); dot(c, 9, 8, eq.scrub.color); }
       if (L.tie) r(c, 7, 9, 2, 3, L.acc);
-      else if (L.acc && L.top === '#f8f8f8') { dot(c, 6, 9, L.acc); dot(c, 9, 9, L.acc); dot(c, 6, 10, L.acc); dot(c, 9, 10, L.acc); dot(c, 7, 11, L.acc); }
+      else if (stethCols.length && L.top === '#f8f8f8') {
+        [[6, 9], [9, 9], [6, 10], [9, 10], [7, 11]].forEach(([x, y], k) => dot(c, x, y, stethCols[k % stethCols.length]));
+      }
+      if (eq.chest) eq.chest.px.forEach(([x, y, col]) => dot(c, x, y, col));
     }
   }
   if (L.longCoat) {
@@ -285,6 +303,9 @@ function person(ctx, ox, oy, dir, frame, L) {
   }
   if (L.style === 'bun' && dir !== 'DOWN') r(c, 6, 0, 4, 2, L.hair);
   if (L.cap) { r(c, 5, 0, 6, 2, C.white); dot(c, 7, 0, C.red); dot(c, 8, 1, C.red); }
+  if (eq.head) drawHeadItem(c, dir, eq.head);
+  if (eq.shoes?.extra === 'croc') { if (!side) { dot(c, 5, 14, '#ffffff'); dot(c, 10, 14, '#ffffff'); } }
+  if (eq.shoes?.extra === 'wing') { if (!side) { dot(c, 4, 13, '#f8f8f8'); dot(c, 11, 13, '#f8f8f8'); dot(c, 3, 12, '#f8e070'); dot(c, 12, 12, '#f8e070'); } else dot(c, 4, 13, '#f8e070'); }
   outline(c, 16, 16);
   ctx.save();
   if (dir === 'LEFT') { ctx.translate(ox + 16, oy); ctx.scale(-1, 1); ctx.drawImage(cv2, 0, 0); }
@@ -295,7 +316,37 @@ function person(ctx, ox, oy, dir, frame, L) {
   ctx.fillRect(ox + 4, oy + 15, 8, 1);
 }
 
+function drawHeadItem(c, dir, h) {
+  const side = dir === 'LEFT' || dir === 'RIGHT';
+  if (h.kind === 'cap') {
+    if (side) r(c, 5, 0, 7, 3, h.color); else r(c, 4, 0, 8, 3, h.color);
+    (h.dots || []).forEach(([x, y, col]) => { if (!side || x >= 5) dot(c, x, y, col); });
+    if (dir === 'DOWN') r(c, 4, 3, 8, 1, h.band || h.color);
+  } else if (h.kind === 'glasses' && dir !== 'UP') {
+    if (dir === 'DOWN') { r(c, 5, 4, 3, 1, h.color); r(c, 8, 4, 3, 1, h.color); dot(c, 5, 5, h.color); dot(c, 10, 5, h.color); }
+    else { r(c, 9, 4, 3, 1, h.color); dot(c, 11, 5, h.color); }
+    if (h.lens) { if (dir === 'DOWN') { dot(c, 6, 5, h.lens); dot(c, 9, 5, h.lens); } }
+  } else if (h.kind === 'band') {
+    if (side) r(c, 5, 2, 7, 1, h.color); else r(c, 4, 2, 8, 1, h.color);
+  } else if (h.kind === 'clip' && dir !== 'UP') {
+    dot(c, dir === 'DOWN' ? 10 : 6, 1, h.color); dot(c, dir === 'DOWN' ? 11 : 7, 2, h.color2 || h.color);
+  }
+}
+
 export const DIR_ORDER = ['DOWN', 'UP', 'LEFT', 'RIGHT'];
+
+export function bakePlayer(scene, look, eq = {}, key = 'p_player', backKey = 'back_player') {
+  const L = LOOKS[look] || LOOKS.docA;
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  const [cv, ctx] = canvas(16 * 12, 16);
+  DIR_ORDER.forEach((d, di) => { for (let f = 0; f < 3; f++) person(ctx, (di * 3 + f) * 16, 0, d, f, L, eq); });
+  const tex = scene.textures.addCanvas(key, cv);
+  for (let i = 0; i < 12; i++) tex.add(i, 0, i * 16, 0, 16, 16);
+  if (backKey) {
+    if (scene.textures.exists(backKey)) scene.textures.remove(backKey);
+    bakeDoctorBack(scene, look, backKey, eq);
+  }
+}
 
 export function bakePeople(scene) {
   for (const [name, L] of Object.entries(LOOKS)) {
@@ -383,7 +434,7 @@ function bakePatientExtras(scene) {
   scene.textures.addCanvas('chesttube', tv);
 }
 
-function bakeDoctorBack(scene, look, key) {
+function bakeDoctorBack(scene, look, key, eq = {}) {
   const L = LOOKS[look];
   const [cv, c] = canvas(48, 48);
   // 肩膀與白袍
@@ -391,9 +442,12 @@ function bakeDoctorBack(scene, look, key) {
   r(c, 8, 27, 32, 4, L.top);
   r(c, 23, 30, 2, 18, L.topD);
   r(c, 6, 44, 36, 4, L.topD);
+  // 刷手服領口與袖口
+  if (eq.scrub) { r(c, 18, 26, 12, 3, eq.scrub.color); r(c, 6, 44, 6, 4, eq.scrub.color); r(c, 36, 44, 6, 4, eq.scrub.color); }
   // 聽診器
-  r(c, 16, 26, 2, 8, '#506078'); r(c, 30, 26, 2, 8, '#506078');
-  r(c, 17, 33, 1, 4, '#506078'); r(c, 30, 33, 1, 4, '#506078');
+  const sc = eq.steth ? (Array.isArray(eq.steth.color) ? eq.steth.color : [eq.steth.color]) : ['#506078'];
+  for (let i = 0; i < 8; i++) { const col = sc[i % sc.length]; dot(c, 16, 26 + i, col); dot(c, 17, 26 + i, col); dot(c, 30, 26 + i, col); dot(c, 31, 26 + i, col); }
+  r(c, 17, 33, 1, 4, sc[0]); r(c, 30, 33, 1, 4, sc[sc.length - 1]);
   // 脖子
   r(c, 19, 22, 10, 6, L.skin);
   // 頭（後腦）
@@ -402,6 +456,8 @@ function bakeDoctorBack(scene, look, key) {
   if (L.style === 'long') r(c, 15, 18, 18, 10, L.hair);
   else r(c, 17, 20, 14, 3, L.hair);
   r(c, 19, 5, 6, 2, '#ffffff30');
+  if (eq.head?.kind === 'cap') { ellipse(c, 24, 9, 10, 7, eq.head.color); (eq.head.dots || []).forEach(([x, y, col]) => r(c, 14 + x * 2, 4 + y * 2, 2, 2, col)); }
+  if (eq.head?.kind === 'band') r(c, 14, 10, 20, 2, eq.head.color);
   outline(c, 48, 48);
   scene.textures.addCanvas(key, cv);
 }

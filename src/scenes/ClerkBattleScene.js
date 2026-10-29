@@ -1,5 +1,8 @@
 import { audio } from '../audio.js';
-import { C, bakePortrait, portraitKey } from '../art.js';
+import { C, bakePortrait, portraitKey, bakePlayer } from '../art.js';
+import { equipFor, fx } from '../progress.js';
+import { drawEcg, ecgType } from '../ecg.js';
+import { PE_NOTES } from '../engine/clerkMenus.js';
 import { txt, Dialog, menu, multiMenu, chooseLong, yesNo, wait, shuffle, W, H } from '../ui.js';
 import { state } from '../save.js';
 import { ClerkEngine, introFor } from '../engine/clerkEngine.js';
@@ -20,7 +23,9 @@ export class ClerkBattleScene extends Phaser.Scene {
       energy: this.classroom ? 100 : state.save.energy,
       variant: this.variant || undefined,
       vitals: shiftEntry?.vitals || undefined,
+      energyMult: this.classroom ? 1 : fx.energyMult(state.save),
     });
+    this.energyMax = this.classroom ? 100 : fx.energyMax(state.save);
     this.isBoss = !!this.d.boss;
     this.done = false;
 
@@ -59,7 +64,8 @@ export class ClerkBattleScene extends Phaser.Scene {
     this.patientX = 176;
     this.patient = this.add.image(-60, 8, key).setOrigin(0, 0);
     const look = state.save.look || 'docA';
-    this.doc = this.add.image(W + 10, 62, 'back_' + (this.classroom ? 'docA' : look)).setOrigin(0, 0);
+    if (!this.classroom) bakePlayer(this, look, equipFor(state.save));
+    this.doc = this.add.image(W + 10, 62, this.classroom ? 'back_docA' : 'back_player').setOrigin(0, 0);
   }
 
   drawPanels() {
@@ -89,6 +95,21 @@ export class ClerkBattleScene extends Phaser.Scene {
     this.vBP = txt(this, 172, 77, '', '#f08080').setDepth(51);
     this.vRR = txt(this, 127, 92, '', '#f0d860').setDepth(51);
     this.vSp = txt(this, 172, 92, '', '#70d8f0').setDepth(51);
+    // 噗通（迷你心臟君）：床邊監視器 ECG 動畫。ECG 開立前一律畫竇性節律，不洩漏診斷。
+    if (!this.classroom && fx.ecgAnim(state.save)) {
+      panel(124, 30, 50, 26, '#0c1810', '#101418');
+      this.ecgG = this.add.graphics().setDepth(51);
+      this.ecgPhase = 0;
+      this.ecgKnown = false;
+    }
+  }
+
+  update(time, dt) {
+    if (!this.ecgG) return;
+    this.ecgPhase += dt / 1000;
+    this.ecgG.clear();
+    const type = this.ecgKnown ? ecgType(this.d) : 'sinus';
+    drawEcg(this.ecgG, 126, 32, 46, 22, this.engine.vitals().hr, type, this.ecgPhase * 25, 0x58e078, 25);
   }
 
   refresh(instant = false) {
@@ -113,7 +134,7 @@ export class ClerkBattleScene extends Phaser.Scene {
       this.sideBar.setFillStyle(s >= 60 ? 0x48c060 : s >= 35 ? 0xe0c040 : 0xe04040);
       if (s < 60) this.patient.setTint(0xc8d0ff);
     } else {
-      this.sideBar.width = (e.energy / 100) * 74;
+      this.sideBar.width = Math.min(1, e.energy / this.energyMax) * 74;
       this.sideBar.setFillStyle(e.energy < 20 ? 0xe04040 : 0x58a8e0);
     }
   }
@@ -165,7 +186,9 @@ export class ClerkBattleScene extends Phaser.Scene {
       const r = key === 'hx' ? this.engine.ask(id) : key === 'pe' ? this.engine.exam(id) : this.engine.order(id);
       this.refresh();
       if (r.penalty) this.floatPenalty(r.penalty);
-      await this.dlg.say(r.lines);
+      if (key === 'lab' && id === 'ECG') this.ecgKnown = true;
+      const extra = key === 'pe' && !this.classroom && fx.goldSteth(state.save) && PE_NOTES[id] ? [PE_NOTES[id]] : [];
+      await this.dlg.say([...r.lines, ...extra]);
       for (const ev of r.events) {
         if (ev.type === 'alarm') {
           audio.sfx('alarm');

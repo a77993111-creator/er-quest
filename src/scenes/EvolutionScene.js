@@ -2,6 +2,8 @@
 import { audio } from '../audio.js';
 import { txt, Dialog, wait, textWidth, W, H } from '../ui.js';
 import { state, persist } from '../save.js';
+import { bakePlayer } from '../art.js';
+import { equipFor } from '../progress.js';
 
 export class EvolutionScene extends Phaser.Scene {
   constructor() { super('Evolution'); }
@@ -14,8 +16,10 @@ export class EvolutionScene extends Phaser.Scene {
     // 光柱與粒子
     this.beam = this.add.rectangle(W / 2, 0, 40, H * 2, 0xfff4c0, 0).setOrigin(0.5, 0);
     this.glow = this.add.circle(W / 2, 70, 30, 0xfff8d8, 0);
-    this.before = this.add.sprite(W / 2, 92, 'p_' + this.base, 0).setScale(4).setOrigin(0.5, 1);
-    this.after = this.add.sprite(W / 2, 92, 'p_' + this.base + '_L', 0).setScale(4).setOrigin(0.5, 1).setAlpha(0);
+    bakePlayer(this, this.base, equipFor(s), 'p_evo0', null);
+    bakePlayer(this, this.base + '_L', equipFor(s), 'p_evo1', null);
+    this.before = this.add.sprite(W / 2, 92, 'p_evo0', 0).setScale(4).setOrigin(0.5, 1);
+    this.after = this.add.sprite(W / 2, 92, 'p_evo1', 0).setScale(4).setOrigin(0.5, 1).setAlpha(0);
     this.badge = txt(this, 0, 98, 'Clerk', '#c8d8f0');
     this.badge.setX(Math.round((W - this.badge.width) / 2));
     this.dlg = new Dialog(this);

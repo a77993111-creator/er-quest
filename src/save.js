@@ -2,20 +2,22 @@
 import { CLERK_CASES, MINICEX } from './engine/clerkMenus.js';
 import { makeVariant } from './engine/clerkEngine.js';
 import { ROOMS } from './mapData.js';
+import { defaultV3, migrate, coinsForCase, addCoins, afterCase, afterIpass, fx } from './progress.js';
 
 const KEY = 'erquest.save.v2';
 const PASS = ['S', 'A', 'B'];
 const GRADE_RANK = { S: 5, A: 4, B: 3, C: 2, F: 1 };
 
 export const DEFAULT_SAVE = () => ({
-  v: 2,
+  ...defaultV3(),
+  v: 3,
   look: 'docA',
   rank: 'clerk',
   exp: 0,
   energy: 100,
   day: 1,
   shift: null,
-  today: { exp: 0, results: [] },
+  today: { exp: 0, coins: 0, results: [] },
   cases: {},       // caseId → { best, plays, wins }
   minicex: Object.fromEntries(MINICEX.map(m => [m.key, { sum: 0, n: 0 }])),
   flags: {},
@@ -28,7 +30,8 @@ export const state = { save: null, cases: {} };
 export function hasSave() {
   try {
     const raw = localStorage.getItem(KEY);
-    return !!raw && JSON.parse(raw).v === 2;
+    const v = raw && JSON.parse(raw).v;
+    return v === 2 || v === 3;
   } catch (_) { return false; }
 }
 
@@ -36,8 +39,8 @@ export function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const d = JSON.parse(raw);
-      if (d.v === 2) return (state.save = { ...DEFAULT_SAVE(), ...d });
+      const d = migrate(JSON.parse(raw));
+      if (d.v === 3) { state.save = { ...DEFAULT_SAVE(), ...d }; persist(); return state.save; }
     }
   } catch (_) {}
   return (state.save = DEFAULT_SAVE());
@@ -95,7 +98,7 @@ export function generateShift(s = state.save, cases = state.cases, rnd = Math.ra
       return { id, room: rooms[k], variant: v?.variant || null, vitals: v?.vitals || null, done: false, grade: null };
     }),
   };
-  s.today = { exp: 0, results: [] };
+  s.today = { exp: 0, coins: 0, results: [] };
   return s.shift;
 }
 
@@ -106,12 +109,15 @@ export function shiftComplete(s = state.save) {
 export function roomNo(i) { return ROOMS[i].no; }
 
 // ---------- 結果寫入 ----------
-export function recordClerk(res, shiftIdx = null) {
+export function recordClerk(res, shiftIdx = null, isBoss = false) {
   const s = state.save;
   const lvBefore = level(s.exp);
+  const prevBest = s.cases[res.caseId]?.best || null;
+  const coin = coinsForCase(s, res, prevBest);
+  addCoins(s, coin.coins);
   s.exp += res.exp;
   s.plays += 1;
-  s.energy = Math.max(0, Math.min(100, res.energy));
+  s.energy = Math.max(0, Math.min(fx.energyMax(s), res.energy));
   const d = s.cases[res.caseId] || { best: null, plays: 0, wins: 0 };
   d.plays += 1;
   if (res.passed) d.wins += 1;
@@ -123,9 +129,14 @@ export function recordClerk(res, shiftIdx = null) {
     s.shift.list[shiftIdx].grade = res.grade;
   }
   s.today.exp += res.exp;
+  s.today.coins = (s.today.coins || 0) + coin.coins;
   s.today.results.push({ caseId: res.caseId, grade: res.grade });
+  // 白白：每天第一位病人看完，精神值 +10
+  const notes = [];
+  if (s.pet === 'pet_wbc' && !s.daily?.wbcBonus) { s.energy = Math.min(fx.energyMax(s), s.energy + 10); if (s.daily) s.daily.wbcBonus = true; notes.push('白白幫你打氣：精神值 +10'); }
+  notes.push(...afterCase(s, res, isBoss));
   persist();
-  return { levelUp: level(s.exp) > lvBefore ? level(s.exp) : null };
+  return { levelUp: level(s.exp) > lvBefore ? level(s.exp) : null, coins: coin, notes };
 }
 
 export function recordIpass(score) {
@@ -134,8 +145,11 @@ export function recordIpass(score) {
   s.shift.ipass = score;
   s.exp += gain;
   s.today.exp += gain;
+  let coins = 0;
+  if (score === 100) { coins = Math.round(20 * fx.coinMult(s)); addCoins(s, coins); s.today.coins = (s.today.coins || 0) + coins; }
+  const notes = afterIpass(s, score);
   persist();
-  return gain;
+  return { gain, coins, notes };
 }
 
 export function minicexAvg(s = state.save) {
@@ -145,11 +159,16 @@ export function minicexAvg(s = state.save) {
   }));
 }
 
+export function snapshotMinicex(s = state.save) {
+  const avg = minicexAvg(s);
+  s.minicexDaily = [...(s.minicexDaily || []).filter(x => x.day !== s.day), { day: s.day, avg }].slice(-30);
+}
+
 export function nextDay(s = state.save) {
   s.day += 1;
-  s.energy = 100;
+  s.energy = fx.energyMax(s);
   s.shift = null;
-  s.today = { exp: 0, results: [] };
+  s.today = { exp: 0, coins: 0, results: [] };
   persist();
 }
 

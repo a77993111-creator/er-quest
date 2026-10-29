@@ -6,6 +6,7 @@ import { C } from './art.js';
 export const W = 240, H = 160;
 // 自動化測試用的狀態旗標（不影響遊戲）
 export const uiState = (window.__erqUI = { menu: 0, waiting: false });
+export const uiConfig = { textMs: 16 };
 export const FONT = 'Cubic11';
 export const LINE_H = 14;
 
@@ -124,8 +125,9 @@ export class Dialog {
         const chars = [...page[i]];
         for (let c = 0; c < chars.length && !skip; c++) {
           this.texts[i].setText(chars.slice(0, c + 1).join(''));
+          if (uiConfig.textMs === 0) { skip = true; break; }
           if (c % 2 === 0) audio.sfx('text');
-          await wait(this.scene, 16);
+          await wait(this.scene, uiConfig.textMs);
           const q = input.poll();
           if (q.includes('A') || q.includes('B')) skip = true;
         }

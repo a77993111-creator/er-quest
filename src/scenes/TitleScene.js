@@ -4,6 +4,7 @@ import { C } from '../art.js';
 import { txt, textWidth, Dialog, menu, wait, W, H } from '../ui.js';
 import { state, hasSave, load, wipe, persist } from '../save.js';
 import { CLERK_CASES, BOSS_CASE } from '../engine/clerkMenus.js';
+import { adminDevice, afterClassroom } from '../progress.js';
 import { GAME_TITLE, GAME_SUBTITLE, VERSION, AUTHOR } from '../config.js';
 
 export class TitleScene extends Phaser.Scene {
@@ -45,6 +46,8 @@ export class TitleScene extends Phaser.Scene {
     const edu = '教育用途';
     txt(this, W - textWidth(edu) - 4, H - 15, edu, '#6a7aa0');
 
+    if (adminDevice()) txt(this, 4, 4, '管理者模式：全部裝備與寵物已解鎖', '#f8e070');
+    else if (state.adminNotice === 'bad') txt(this, 4, 4, '管理者密碼不正確', '#f08080');
     audio.play('title');
     this.run();
   }
@@ -141,7 +144,7 @@ export class TitleScene extends Phaser.Scene {
     dlg.destroy();
     if (i < 0) return false;
     if (i === ids.length) this.go('Battle', { caseId: 'tension-ptx', mode: 'resident', classroom: true });
-    else this.go('ClerkBattle', { caseId: ids[i], classroom: true });
+    else { afterClassroom(state.save); persist(); this.go('ClerkBattle', { caseId: ids[i], classroom: true }); }
     return true;
   }
 

@@ -22,6 +22,8 @@ export class ClerkEngine {
     this.bossAlarm = false;
     this.ended = null;
     this.fatigueWarned = false;
+    this.energyMult = opts.energyMult ?? 1;
+    this.ecgAt = null;
   }
 
   // ---------- 查詢 ----------
@@ -81,6 +83,7 @@ export class ClerkEngine {
     const result = entry ? entry[0] : item.def;
     if (this.labsDone.has(lid)) return this._out([`【${item.label}】`, result, '（已經開過了）'], 0);
     this.labsDone.add(lid);
+    if (lid === 'ECG' && this.ecgAt == null) this.ecgAt = this.t;
     this.log.push({ t: this.t, label: `開：${item.label}` });
     const pre = lid === 'CXR' ? ['學長幫你開了 CXR，推去照相…'] : [];
     const ev = this._spend(item.time, 2);
@@ -90,7 +93,7 @@ export class ClerkEngine {
   }
 
   _spend(min, energy) {
-    this.energy = Math.max(0, this.energy - energy);
+    this.energy = Math.max(0, this.energy - energy * this.energyMult);
     const events = [];
     let m = min;
     if (this.energy < 20) {
@@ -224,6 +227,8 @@ export class ClerkEngine {
       minicex,
       energy: this.energy,
       log: this.log,
+      missedRedFlag: kq.some(({ h, i }) => h[3] === 'RF' && !this.asked.has(i)),
+      ecgAt: this.ecgAt,
       bossAnswers: this.boss ? this.boss.questions.map((q, k) => ({ q: q.q, ok: answers[k] === q.options[0], explain: q.explain })) : null,
     };
   }

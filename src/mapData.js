@@ -16,9 +16,9 @@ export const MAP = [
   R('#', '..p', '.'.repeat(22), 'p..', '#'),
   R('#', '##s.####', '#', '..........', '#', '##sL####', '#'),
   R('#', 'rBBBBBkk', '#', 'ccc.......', '#', 'oooooooo', '#'),
-  R('#', 'rBBBBBBB', '#', '..........', '#', 'ookkkooo', '#'),
-  R('#', 'BBBBBBBB', '#', '..hhhhhh..', '#', 'oooooooo', '#'),
-  R('#', 'BBBBBBBB', '#', '..........', '#', 'oooooooo', '#'),
+  R('#', 'rBBBBBBB', '#', '.......ccc', '#', 'ookkkooo', '#'),
+  R('#', 'BBBBBBBw', '#', '..hhhhhh..', '#', 'oooooooo', '#'),
+  R('#', 'BBBBBBBw', '#', '..........', '#', 'oooooooo', '#'),
   R('#', 'BBBBBBBB', '#', '..hhhhhh..', '#', 'oooooooo', '#'),
   R('#', 'BBBBBBBB', '#', '..........', '#', 'oooooooo', '#'),
   R('#', 'pBBBBBBp', '#', 'p........p', '#', 'oooooooo', '#'),
@@ -30,7 +30,7 @@ export const MAP_W = 30;
 export const MAP_H = 20;
 export const TILE = 16;
 
-export const SOLID = new Set(['#', 's', 'L', 'E', 'c', 'k', 'b', 'm', 'x', 'p', 'h', 'T', 'U', 'r']);
+export const SOLID = new Set(['#', 's', 'L', 'E', 'c', 'k', 'b', 'm', 'x', 'p', 'h', 'T', 'U', 'r', 'w']);
 export const FLOORS = new Set(['.', 'R', 'y', 'B', 'o', 'd']);
 export const ENCOUNTER = new Set([]);
 
@@ -47,6 +47,7 @@ export const NPCS = [
   { id: 'chief', x: 14, y: 8, dir: 'DOWN', look: 'chief', name: '總醫師' },
   { id: 'nurse', x: 13, y: 11, dir: 'DOWN', look: 'nurse', name: '診區護理師' },
   { id: 'boss', x: 24, y: 13, dir: 'DOWN', look: 'attending', name: '一般診區主治' },
+  { id: 'shop', x: 18, y: 11, dir: 'DOWN', look: 'shop', name: '福利社阿姨' },
 ];
 
 export const SIGNS = {
@@ -54,7 +55,7 @@ export const SIGNS = {
   '10,6': ['【第 2 診間】'],
   '17,6': ['【第 3 診間】'],
   '24,6': ['【第 4 診間】'],
-  '3,10': ['【值班室】', '下班後在床上休息，進入下一天。', '隨時可以在這裡存檔。'],
+  '3,10': ['【值班室】', '下班後在床上休息，進入下一天。', '右邊的置物櫃可以換裝。'],
   '23,10': ['【主治辦公室】', '升等考在這裡舉行。'],
 };
 

@@ -1,13 +1,18 @@
 import { input } from '../input.js';
 import { audio } from '../audio.js';
-import { C, DIR_ORDER } from '../art.js';
+import { C, DIR_ORDER, bakePlayer } from '../art.js';
 import { MAP, MAP_W, MAP_H, TILE, SOLID, START, BED_SPOT, NPCS, SIGNS, OBJECT_TEXT, roomPatientSpot } from '../mapData.js';
-import { txt, Dialog, menu, yesNo, makeWindow, wait, W, H } from '../ui.js';
+import { txt, Dialog, menu, yesNo, makeWindow, wait, wrap, uiConfig, W, H } from '../ui.js';
 import {
   state, persist, wipe, level, rankTitle, RANK_LABEL, passedCount, examEligible, generateShift, shiftComplete,
   roomNo, minicexAvg, bar9,
 } from '../save.js';
 import { CLERK_CASES, BOSS_CASE, MINICEX } from '../engine/clerkMenus.js';
+import { SLOTS, RARITY, ITEMS, PETS, BADGES, UNLOCK_TEXT } from '../cosmetics.js';
+import { equipFor, fx, owns, itemById, dailyReset, addCoins, SPEEDS, adminDevice } from '../progress.js';
+
+const COFFEE_PRICE = 30;
+const COFFEE_GAIN = 30;
 
 const DELTA = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0] };
 const OPP = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
@@ -24,6 +29,14 @@ export class MapScene extends Phaser.Scene {
     this.stepParity = 0;
     this.turnUntil = 0;
     if (!this.s.shift) generateShift();
+    dailyReset(this.s);
+    if (fx.freeCoffee(this.s) && !this.s.daily.freeCoffee) {
+      this.s.daily.freeCoffee = true;
+      this.s.inventory.coffee = (this.s.inventory.coffee || 0) + 1;
+      this.freeCoffeeMsg = true;
+    }
+    persist();
+    bakePlayer(this, this.s.look, equipFor(this.s));
 
     this.add.image(0, 0, 'map').setOrigin(0, 0).setDepth(0);
 
@@ -40,8 +53,9 @@ export class MapScene extends Phaser.Scene {
     let p = this.s.pos || START;
     if (data?.newDay || data?.newGame) p = data.newGame ? START : BED_SPOT;
     this.px = p.x; this.py = p.y; this.dir = p.dir || 'UP';
-    this.player = this.add.sprite(this.px * TILE, this.py * TILE, 'p_' + this.s.look, frameOf(this.dir, 0))
+    this.player = this.add.sprite(this.px * TILE, this.py * TILE, 'p_player', frameOf(this.dir, 0))
       .setOrigin(0, 0).setDepth(10 + this.py);
+    this.setupPet();
 
     const cam = this.cameras.main;
     cam.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
@@ -52,6 +66,8 @@ export class MapScene extends Phaser.Scene {
     this.dlg = new Dialog(this);
     this.hud = txt(this, 4, 3, '', '#ffffff').setScrollFactor(0).setDepth(400);
     this.hudBg = this.add.rectangle(0, 0, W, 18, 0x18203a, 0.75).setOrigin(0).setScrollFactor(0).setDepth(399);
+    this.coinBg = this.add.rectangle(W, 18, 70, 14, 0x18203a, 0.6).setOrigin(1, 0).setScrollFactor(0).setDepth(399);
+    this.coinTxt = txt(this, 0, 19, '', '#f8e070').setScrollFactor(0).setDepth(400);
     this.updateHud();
     audio.play('map');
 
@@ -78,6 +94,9 @@ export class MapScene extends Phaser.Scene {
     const left = s.shift.list.filter(x => !x.done).length;
     const task = !s.shift.briefed ? '找總醫師晨會' : left ? `待看病人 ${left} 位` : s.shift.ipass == null ? '找總醫師交班' : '去值班室休息';
     this.hud.setText(`第${s.day}天 ${RANK_LABEL[s.rank]} Lv.${level()}｜${task}`);
+    this.coinTxt.setText(`白袍幣 ${s.coins}${s.admin || adminDevice() ? '・管' : ''}`);
+    this.coinTxt.setX(W - 4 - this.coinTxt.width);
+    this.coinBg.width = this.coinTxt.width + 8;
   }
 
   async intro(data) {
@@ -99,6 +118,7 @@ export class MapScene extends Phaser.Scene {
       if (shiftComplete()) await this.dlg.say(['今天的病人都看完了！', '下班前記得找總醫師交班。']);
       else if (this.s.energy < 30) await this.dlg.say(['（好累…還有病人要看，撐住！）']);
     }
+    if (this.freeCoffeeMsg) await this.dlg.say(['夜光刷手服的口袋裡有一杯熱咖啡。（背包：咖啡 +1）']);
     if (examEligible() && !this.s.flags.examNotified) {
       this.s.flags.examNotified = true;
       persist();
@@ -112,6 +132,7 @@ export class MapScene extends Phaser.Scene {
   blocked(x, y) { return SOLID.has(this.tileAt(x, y)) || !!this.npcAt(x, y); }
 
   update(time) {
+    this.syncAura();
     if (this.busy || this.moving) return;
     const presses = input.poll();
     if (presses.includes('START')) { this.run(() => this.startMenu()); return; }
@@ -147,8 +168,10 @@ export class MapScene extends Phaser.Scene {
     this.stepParity = 1 - this.stepParity;
     this.player.setFrame(frameOf(d, 1 + this.stepParity));
     this.player.setDepth(10 + Math.max(this.py, ny));
+    const dur = Math.round(150 / fx.walkMult(this.s));
+    this.movePet(this.px, this.py, dur);
     this.tweens.add({
-      targets: this.player, x: nx * TILE, y: ny * TILE, duration: 150,
+      targets: this.player, x: nx * TILE, y: ny * TILE, duration: dur,
       onUpdate: (tw) => { if (tw.progress > 0.5) this.player.setFrame(frameOf(d, 0)); },
       onComplete: () => { this.px = nx; this.py = ny; this.player.setDepth(10 + ny); this.moving = false; },
     });
@@ -187,6 +210,7 @@ export class MapScene extends Phaser.Scene {
     const key = `${tx},${ty}`;
     if (SIGNS[key]) { await this.dlg.say(SIGNS[key]); return; }
     if (ch === 'r') { await this.rest(); return; }
+    if (ch === 'w') { await this.wardrobe(); return; }
     if (ch === 'L') { await this.examDoor(); return; }
     if (OBJECT_TEXT[ch]) await this.dlg.say(OBJECT_TEXT[ch]);
   }
@@ -239,10 +263,14 @@ export class MapScene extends Phaser.Scene {
           '診區護理師：「Clerk 加油！」',
           '「聽說學長最在意的是：紅旗症狀有沒有問、PE 有沒有做到重點。」',
           '「檢查開太多也會被念喔。」',
+          '「表現好會拿到白袍幣，可以去候診區的福利社逛逛～」',
         ]);
         break;
       case 'boss':
         await this.dlg.say(['（主治在辦公室裡看論文。）']);
+        break;
+      case 'shop':
+        await this.shop();
         break;
     }
   }
@@ -283,19 +311,227 @@ export class MapScene extends Phaser.Scene {
     } else this.dlg.hide();
   }
 
+  // ---------- 寵物跟隨 ----------
+  setupPet() {
+    if (this.petSp) { this.petSp.destroy(); this.petSp = null; }
+    if (this.aura) { this.aura.destroy(); this.aura = null; }
+    if (this.auraSpark) { this.auraSpark.remove(); this.auraSpark = null; }
+    if (this.petBob) { this.petBob.remove(); this.petBob = null; }
+    const id = this.s.pet;
+    if (!id || !this.textures.exists(id)) return;
+    const [dx, dy] = DELTA[OPP[this.dir]];
+    const bx = this.px + dx, by = this.py + dy;
+    const ok = !SOLID.has(this.tileAt(bx, by)) && !this.npcAt(bx, by);
+    this.petX = ok ? bx : this.px; this.petY = ok ? by : this.py;
+    this.petSp = this.add.sprite(this.petX * TILE, this.petY * TILE, id, 0).setOrigin(0, 0).setDepth(9.5 + this.petY);
+    let f = 0;
+    this.petBob = this.time.addEvent({ delay: 420, loop: true, callback: () => { f = 1 - f; this.petSp?.setFrame(f); } });
+    if (fx.aura(this.s)) {
+      this.aura = this.add.ellipse(0, 0, 20, 7, 0xffc020, 0.85).setStrokeStyle(1, 0xfff4a0, 1).setDepth(9);
+      this.tweens.add({ targets: this.aura, alpha: 0.35, scaleX: 1.3, scaleY: 1.3, duration: 650, yoyo: true, repeat: -1 });
+      this.syncAura();
+      this.auraSpark = this.time.addEvent({
+        delay: 380, loop: true, callback: () => {
+          if (!this.aura) return;
+          const p = this.add.rectangle(this.player.x + 3 + Math.random() * 10, this.player.y + 12, 1, 1, Math.random() < 0.5 ? 0xfff080 : 0xffffff).setDepth(30);
+          this.tweens.add({ targets: p, y: p.y - 12 - Math.random() * 6, alpha: 0, duration: 700, onComplete: () => p.destroy() });
+        },
+      });
+    }
+  }
+
+  syncAura() { if (this.aura) this.aura.setPosition(this.player.x + 8, this.player.y + 15); }
+
+  movePet(tx, ty, dur) {
+    if (!this.petSp) return;
+    this.petX = tx; this.petY = ty;
+    this.petSp.setDepth(9.5 + Math.max(ty, Math.round(this.petSp.y / TILE)));
+    this.tweens.add({ targets: this.petSp, x: tx * TILE, y: ty * TILE, duration: dur, onComplete: () => this.petSp?.setDepth(9.5 + ty) });
+  }
+
+  rebake() {
+    bakePlayer(this, this.s.look, equipFor(this.s));
+    this.player.setTexture('p_player', frameOf(this.dir, 0));
+    this.setupPet();
+  }
+
+  // ---------- 預覽視窗（福利社／置物櫃共用） ----------
+  openPreview(title) {
+    const objs = [makeWindow(this, 2, 20, 100, 90, 'paper', 280)];
+    const add = o => { objs.push(o.setScrollFactor(0).setDepth(281)); return o; };
+    const head = add(txt(this, 8, 23, title, '#806040'));
+    const person = add(this.add.sprite(40, 106, 'p_player', 0).setScale(4).setOrigin(0.5, 1));
+    const pet = add(this.add.sprite(86, 106, 'pet_rbc', 0).setScale(2).setOrigin(0.5, 1).setVisible(false));
+    let f = 0;
+    const bob = this.time.addEvent({ delay: 420, loop: true, callback: () => { f = 1 - f; if (pet.visible) pet.setFrame(f); } });
+    this.hudBg.setVisible(false); this.hud.setVisible(false); this.coinBg.setVisible(false); this.coinTxt.setVisible(false);
+    return {
+      title: t => head.setText(t),
+      show: (equip, petId) => {
+        bakePlayer(this, this.s.look, equipFor({ equip }), 'p_preview', null);
+        person.setTexture('p_preview', 0);
+        if (petId && this.textures.exists(petId)) pet.setTexture(petId, f).setVisible(true);
+        else pet.setVisible(false);
+      },
+      close: () => {
+        bob.remove(); objs.forEach(o => o.destroy());
+        this.hudBg.setVisible(true); this.hud.setVisible(true); this.coinBg.setVisible(true); this.coinTxt.setVisible(true);
+      },
+    };
+  }
+
+  itemInfo(it) {
+    const rar = RARITY[it.rarity]?.label || '';
+    const cost = it.unlock ? `成就限定：${UNLOCK_TEXT[it.unlock]}` : `${it.price} 白袍幣`;
+    return `${it.name}${it.sub ? `（${it.sub}）` : ''}【${rar}】${cost}${it.fx ? `\n★ ${it.fx}` : ''}`;
+  }
+
+  // ---------- 福利社 ----------
+  async shop() {
+    const s = this.s;
+    await this.dlg.say(['福利社阿姨：「歡迎光臨！看病人辛苦了～」', '「用白袍幣可以換裝備和寵物喔。」']);
+    for (;;) {
+      this.dlg.set(`福利社阿姨：「要買什麼？」　（白袍幣 ${s.coins}）`);
+      const i = await menu(this, [{ label: '裝備' }, { label: '寵物' }, { label: '咖啡', right: `${COFFEE_PRICE}` }, { label: '離開' }], { x: W - 92, y: 110 - 70, w: 88 });
+      if (i === 0) await this.shopItems();
+      else if (i === 1) await this.shopPets();
+      else if (i === 2) {
+        if (s.coins < COFFEE_PRICE) { audio.sfx('bump'); await this.dlg.say(['白袍幣不夠喔。']); continue; }
+        addCoins(s, -COFFEE_PRICE);
+        s.inventory.coffee = (s.inventory.coffee || 0) + 1;
+        persist(); this.updateHud(); audio.sfx('heal');
+        await this.dlg.say([`買了一杯咖啡！（背包：咖啡 ×${s.inventory.coffee}）`, `在 START →「背包」喝掉，可以恢復 ${COFFEE_GAIN} 精神值。`]);
+      } else break;
+    }
+    this.dlg.hide();
+  }
+
+  async buy(it, isPet) {
+    const s = this.s;
+    if (owns(s, it.id) && !(s.admin || adminDevice())) { await this.dlg.say(['你已經有這個了。到值班室的置物櫃可以換上。']); return false; }
+    if (it.unlock) { await this.dlg.say([`這是成就限定的傳說${isPet ? '寵物' : '裝備'}，不能購買。`, `解鎖條件：${UNLOCK_TEXT[it.unlock]}`]); return false; }
+    if (s.admin || adminDevice()) { await this.dlg.say(['（管理者模式：已全部解鎖，不需購買。到置物櫃可以直接換上。）']); return false; }
+    if (s.coins < it.price) { audio.sfx('bump'); await this.dlg.say([`白袍幣不夠喔。（需要 ${it.price}，你有 ${s.coins}）`]); return false; }
+    this.dlg.set(`要用 ${it.price} 白袍幣買「${it.name}」嗎？`);
+    if (!(await yesNo(this, { y: 110 - 46 }))) return false;
+    addCoins(s, -it.price);
+    (isPet ? s.owned.pets : s.owned.items).push(it.id);
+    persist(); this.updateHud(); audio.sfx('win');
+    await this.dlg.say([`買到了「${it.name}」！`, '到值班室的置物櫃就可以換上。']);
+    return true;
+  }
+
+  async shopItems() {
+    const s = this.s;
+    const pv = this.openPreview(`白袍幣 ${s.coins}`);
+    let start = 0;
+    for (;;) {
+      const list = ITEMS.slice().sort((a, b) => SLOTS.findIndex(x => x.key === a.slot) - SLOTS.findIndex(x => x.key === b.slot));
+      const items = list.map(it => ({ label: it.name, right: owns(s, it.id) ? '持有' : it.unlock ? '成就' : String(it.price), dim: owns(s, it.id) }));
+      const i = await menu(this, items, {
+        x: 104, y: 20, w: 134, visibleRows: 5, depth: 300, start,
+        onMove: k => { const it = list[k]; pv.show({ ...s.equip, [it.slot]: it.id }, s.pet); this.dlg.set(this.itemInfo(it)); },
+      });
+      if (i < 0) break;
+      start = i;
+      await this.buy(list[i], false);
+      pv.title(`白袍幣 ${s.coins}`);
+    }
+    pv.close();
+  }
+
+  async shopPets() {
+    const s = this.s;
+    const pv = this.openPreview(`白袍幣 ${s.coins}`);
+    let start = 0;
+    for (;;) {
+      const items = PETS.map(p => ({ label: p.name, right: owns(s, p.id) ? '持有' : p.unlock ? '成就' : String(p.price), dim: owns(s, p.id) }));
+      const i = await menu(this, items, {
+        x: 104, y: 20, w: 134, visibleRows: 5, depth: 300, start,
+        onMove: k => { pv.show(s.equip, PETS[k].id); this.dlg.set(this.itemInfo(PETS[k])); },
+      });
+      if (i < 0) break;
+      start = i;
+      await this.buy(PETS[i], true);
+      pv.title(`白袍幣 ${s.coins}`);
+    }
+    pv.close();
+  }
+
+  // ---------- 置物櫃（換裝） ----------
+  async wardrobe() {
+    const s = this.s;
+    audio.sfx('select');
+    const pv = this.openPreview(s.admin || adminDevice() ? '置物櫃・管理' : '置物櫃');
+    let start = 0;
+    for (;;) {
+      pv.show(s.equip, s.pet);
+      const rows = [...SLOTS.map(sl => ({ label: sl.label, right: s.equip[sl.key] ? itemById(s.equip[sl.key]).name : '—' })),
+        { label: '寵物', right: s.pet ? itemById(s.pet).name : '—' }, { label: '完成' }];
+      this.dlg.set('要換哪一個部位？（B 結束）');
+      const i = await menu(this, rows, { x: 104, y: 20, w: 134, visibleRows: 5, depth: 300, start });
+      if (i < 0 || i === rows.length - 1) break;
+      start = i;
+      if (i < SLOTS.length) {
+        const slot = SLOTS[i].key;
+        const list = ITEMS.filter(it => it.slot === slot && owns(s, it.id));
+        if (!list.length && !s.equip[slot]) { await this.dlg.say(['這個部位還沒有裝備。到候診區的福利社看看吧！']); continue; }
+        const opts = [{ label: '（不穿）' }, ...list.map(it => ({ label: it.name, right: s.equip[slot] === it.id ? '穿著' : '' }))];
+        const cur = Math.max(0, list.findIndex(it => it.id === s.equip[slot]) + 1);
+        const k = await menu(this, opts, {
+          x: 104, y: 20, w: 134, visibleRows: 5, depth: 310, start: cur,
+          onMove: j => { pv.show({ ...s.equip, [slot]: j ? list[j - 1].id : null }, s.pet); this.dlg.set(j ? this.itemInfo(list[j - 1]) : '不穿這個部位。'); },
+        });
+        if (k >= 0) { s.equip[slot] = k ? list[k - 1].id : null; audio.sfx('save'); }
+      } else {
+        const list = PETS.filter(p => owns(s, p.id));
+        if (!list.length) { await this.dlg.say(['還沒有寵物。福利社有賣喔！']); continue; }
+        const opts = [{ label: '（不帶）' }, ...list.map(p => ({ label: p.name, right: s.pet === p.id ? '同行' : '' }))];
+        const cur = Math.max(0, list.findIndex(p => p.id === s.pet) + 1);
+        const k = await menu(this, opts, {
+          x: 104, y: 20, w: 134, visibleRows: 5, depth: 310, start: cur,
+          onMove: j => { pv.show(s.equip, j ? list[j - 1].id : null); this.dlg.set(j ? this.itemInfo(list[j - 1]) : '不帶寵物。'); },
+        });
+        if (k >= 0) { s.pet = k ? list[k - 1].id : null; audio.sfx('save'); }
+      }
+    }
+    pv.close();
+    this.dlg.hide();
+    persist();
+    this.rebake();
+  }
+
+  // ---------- 背包 ----------
+  async bag() {
+    const s = this.s;
+    for (;;) {
+      const n = s.inventory.coffee || 0;
+      const i = await menu(this, [{ label: '咖啡', right: `×${n}`, dim: !n }, { label: '返回' }], { x: W - 104, y: 20, w: 100 });
+      if (i !== 0) return;
+      if (!n) { await this.dlg.say(['沒有咖啡了。福利社一杯 30 白袍幣。']); continue; }
+      const max = fx.energyMax(s);
+      if (s.energy >= max) { await this.dlg.say([`精神值已經是滿的（${s.energy}/${max}）。`]); continue; }
+      s.inventory.coffee = n - 1;
+      s.energy = Math.min(max, s.energy + COFFEE_GAIN);
+      persist(); audio.sfx('heal');
+      await this.dlg.say([`喝了咖啡，精神值恢復到 ${s.energy}/${max}！`]);
+    }
+  }
+
   // ---------- START 選單 ----------
   async startMenu() {
     audio.sfx('select');
     for (;;) {
-      const i = await menu(this, [{ label: '疾病圖鑑' }, { label: '醫師卡' }, { label: '存檔' }, { label: '設定' }, { label: '關閉' }],
+      const i = await menu(this, [{ label: '疾病圖鑑' }, { label: '醫師卡' }, { label: '背包' }, { label: '存檔' }, { label: '設定' }, { label: '關閉' }],
         { x: W - 82, y: 20, w: 78 });
       if (i === 0) await this.dex();
       else if (i === 1) await this.card();
-      else if (i === 2) {
+      else if (i === 2) await this.bag();
+      else if (i === 3) {
         this.savePos();
         if (persist()) { audio.sfx('save'); await this.dlg.say(['進度已經存檔！']); }
         else await this.dlg.say(['存檔失敗（瀏覽器可能封鎖了儲存空間）。']);
-      } else if (i === 3) { if (await this.settings()) return; }
+      } else if (i === 4) { if (await this.settings()) return; }
       else return;
     }
   }
@@ -330,13 +566,15 @@ export class MapScene extends Phaser.Scene {
     const objs = [makeWindow(this, 4, 4, W - 8, H - 8, 'paper', 280)];
     const add = o => { objs.push(o.setScrollFactor(0).setDepth(281)); return o; };
     add(txt(this, 14, 10, '醫師卡', '#806040'));
-    add(this.add.sprite(40, 64, 'p_' + s.look, 0).setScale(3));
+    add(this.add.sprite(40, 64, 'p_player', 0).setScale(3));
+    if (s.pet) add(this.add.sprite(40, 104, s.pet, 0).setScale(2));
     const avg = minicexAvg();
     const lines = [
       `職級　${RANK_LABEL[s.rank]}（${rankTitle()}）`,
       `等級　Lv.${level()}　${s.exp} EXP`,
       `天數　第 ${s.day} 天　看診 ${s.plays} 次`,
       `通過　${passedCount()}/10 案（B 以上）`,
+      `白袍幣　${s.coins}　徽章 ${s.badges.length}/${BADGES.length}`,
       ...MINICEX.map(m => `${m.label.slice(0, 2)}　${bar9(avg[m.key])}`),
     ];
     lines.forEach((l, i) => add(txt(this, 76, 26 + i * 14, l)));
@@ -344,14 +582,31 @@ export class MapScene extends Phaser.Scene {
     for (;;) { const k = await input.next(); if (k === 'A' || k === 'B') break; }
     audio.sfx('cancel');
     objs.forEach(o => o.destroy());
+    if (s.badges.length) {
+      await this.dlg.say(['【徽章】', ...BADGES.filter(b => s.badges.includes(b.id)).map(b => `★ ${b.name}：${b.desc}`)]);
+    }
   }
 
   async settings() {
     for (;;) {
-      const items = [{ label: '音效', right: audio.muted ? '關' : '開' }, { label: '刪除存檔' }, { label: '返回' }];
-      const i = await menu(this, items, { x: W - 110, y: 20, w: 106 });
-      if (i === 0) { audio.setMuted(!audio.muted); syncMuteButton(); }
-      else if (i === 1) {
+      const st = this.s.settings;
+      const ts = SPEEDS.text.find(t => t.key === st.textSpeed) || SPEEDS.text[1];
+      const ws = SPEEDS.walk.find(t => t.key === st.walk) || SPEEDS.walk[0];
+      const items = [{ label: '文字速度', right: ts.label }, { label: '走路速度', right: ws.label }, { label: '音效', right: audio.muted ? '關' : '開' }, { label: '刪除存檔' }, { label: '返回' }];
+      const i = await menu(this, items, { x: W - 118, y: 20, w: 114, start: this.lastSet || 0 });
+      this.lastSet = Math.max(0, i);
+      if (i === 0) {
+        const k = SPEEDS.text.indexOf(ts);
+        st.textSpeed = SPEEDS.text[(k + 1) % SPEEDS.text.length].key;
+        uiConfig.textMs = fx.textMs(this.s);
+        persist();
+        await this.dlg.say([`文字速度：${SPEEDS.text.find(t => t.key === st.textSpeed).label}。這是範例文字。`]);
+      } else if (i === 1) {
+        const k = SPEEDS.walk.indexOf(ws);
+        st.walk = SPEEDS.walk[(k + 1) % SPEEDS.walk.length].key;
+        persist();
+      } else if (i === 2) { audio.setMuted(!audio.muted); syncMuteButton(); }
+      else if (i === 3) {
         this.dlg.set('確定要刪除存檔嗎？無法復原。');
         const ok = await menu(this, [{ label: '刪除' }, { label: '取消' }], { x: W - 60, y: 60 });
         this.dlg.hide();

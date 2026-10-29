@@ -5,6 +5,8 @@ import { txt, wrap, makeWindow, menu, W, H, LINE_H } from '../ui.js';
 import { state, recordClerk, level, rankTitle, bar9 } from '../save.js';
 import { FAIL_REASON } from '../config.js';
 import { MINICEX } from '../engine/clerkMenus.js';
+import { fx } from '../progress.js';
+import { drawEcg, ecgType } from '../ecg.js';
 
 const BODY_LINES = 8;
 
@@ -48,14 +50,14 @@ export class ReportScene extends Phaser.Scene {
   }
 
   clerkPages(data, res, c) {
-    let levelUp = null, firstDex = false;
+    let levelUp = null, firstDex = false, rec = null;
+    const isBoss = !!c.boss;
     if (!data.classroom) {
       const prev = state.save.cases[data.caseId];
       firstDex = res.passed && !(prev && prev.wins > 0);
-      const r = recordClerk(res, data.shiftIdx);
-      if (r.levelUp) levelUp = `Lv.${r.levelUp} ${rankTitle()}`;
+      rec = recordClerk(res, data.shiftIdx, isBoss);
+      if (rec.levelUp) levelUp = `Lv.${rec.levelUp} ${rankTitle()}`;
     }
-    const isBoss = !!c.boss;
     const summary = [];
     if (res.reason === 'takeover') summary.push('結果：ECG 太晚，病人惡化，主治接手。');
     else if (!res.dxOk) summary.push(`你的診斷：${res.chosenDx || '未報告'}`);
@@ -67,13 +69,18 @@ export class ReportScene extends Phaser.Scene {
     if (!data.classroom) summary.push(`獲得 ${res.exp} EXP`);
     if (firstDex) summary.push(`圖鑑登錄：${c.dex.name}！`);
     if (levelUp) summary.push(`升級了！${levelUp}`);
+    if (rec) summary.push(`白袍幣 +${rec.coins.coins}（持有 ${state.save.coins}）`);
     const pages = [{ title: res.passed ? '看診完成！' : 'M&M 回顧', lines: summary, grade: res.grade }];
+    if (rec && (rec.coins.lines.length || rec.notes.length)) pages.push({ title: '獎勵', lines: [...rec.coins.lines, ...rec.notes] });
     pages.push({ title: 'Mini-CEX 評量（1–9）', lines: MINICEX.map(m => `${m.label.padEnd(4, '　')} ${bar9(res.minicex[m.key])} ${res.minicex[m.key]}`) });
     pages.push({ title: '做得好', lines: res.goods.length ? res.goods.map(g => '○ ' + g) : ['（這次沒有做到關鍵項目）'] });
     pages.push({ title: '待改進', lines: res.deductions.length ? res.deductions.map(d => `－${d.pts}　${d.text}`) : ['（沒有扣分，太棒了！）'] });
     if (res.bossAnswers) pages.push({ title: '考官追問', lines: res.bossAnswers.map(b => `${b.ok ? '○' : '×'} ${b.q}　${b.explain}`) });
     const tl = res.log.map(l => `${String(l.t).padStart(2, '0')}分　${l.label}`);
     pages.push({ title: '你的看診時間軸', lines: tl.length ? tl : ['（沒有任何動作）'] });
+    const s = state.save;
+    if (fx.ecgStrip(s) && ecgType(c) !== 'sinus') pages.push({ title: '心電蛇：本案 ECG 波形', lines: [], ecg: ecgType(c), hr: c.vitals?.hr || 80 });
+    if (fx.pocus(s) && c.pocus) pages.push({ title: 'POCUS 豚：床邊超音波會看到什麼', lines: [c.pocus] });
     pages.push({ title: '教學重點', lines: [`陷阱：${c.trap}`, ...c.teaching.map((t, i) => `${i + 1}. ${t}`)] });
     pages.push({ title: '參考文獻', lines: c.refs });
     return pages;
@@ -111,6 +118,13 @@ export class ReportScene extends Phaser.Scene {
     this.gradeTxt.setFontSize(p.grade === 'F' ? 12 : 24);
     this.gradeLbl.setVisible(showGrade);
     this.hint.setText(this.idx < this.pages.length - 1 ? 'B ←　→ A' : 'A：繼續');
+    if (this.ecgG) { this.ecgG.destroy(); this.ecgG = null; }
+    if (p.ecg && !p.cont) {
+      this.ecgG = this.add.graphics().setDepth(12);
+      this.ecgG.fillStyle(0x10201a, 1).fillRect(12, 34, W - 24, 70);
+      drawEcg(this.ecgG, 14, 36, W - 28, 66, p.hr, p.ecg, 0, 0x60f080);
+      this.body[6].setText(p.ecg === 'af' ? '不規則的 RR 間隔、沒有 P 波 → AF' : 'II、III、aVF ST 上升 → Inferior STEMI');
+    }
   }
 
   async run() {

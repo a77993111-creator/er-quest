@@ -1,0 +1,41 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<style>
+@font-face{font-family:Cubic11;src:url('../fonts/Cubic_11.woff2') format('woff2')}
+body{margin:0;padding:16px;background:#f6f1e4;font-family:Cubic11,sans-serif;color:#283040;width:1180px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:18px;margin:18px 0 8px;border-bottom:2px solid #c8b890}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cell{background:#fff;border:2px solid #283040;border-radius:6px;padding:6px;text-align:center;font-size:12px;line-height:16px}
+canvas{image-rendering:pixelated;display:block;margin:0 auto 4px;background:#e6ecf2;border-radius:4px}
+.N{color:#7a8494}.R{color:#3e80d0}.L{color:#d89020}.fx{color:#a04060;font-size:11px}
+</style></head><body>
+<h1>急診物語 寵物與裝備造型預覽</h1>
+<div style="font-size:13px">灰＝普通　藍＝稀有　金＝傳說（成就限定）。每個造型都是 16×16 像素，放大 4 倍顯示。</div>
+<h2>寵物（14 隻）</h2><div class="grid" id="pets"></div>
+<h2>裝備（穿在角色身上）</h2><div id="equip"></div>
+<script type="module">
+import { drawPerson, LOOKS } from '../src/art.js';
+import { drawPet } from '../src/petArt.js';
+import { ITEMS, PETS, SLOTS, RARITY, UNLOCK_TEXT } from '../src/cosmetics.js';
+await document.fonts.load('12px Cubic11');
+const rl = k => RARITY[k].label;
+function cell(parent, draw, title, sub, rar, fx) {
+  const d = document.createElement('div'); d.className = 'cell';
+  const cv = document.createElement('canvas'); cv.width = 16; cv.height = 16; cv.style.width = '64px'; cv.style.height = '64px';
+  const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false; draw(ctx);
+  d.appendChild(cv);
+  d.insertAdjacentHTML('beforeend', `<div class="${rar}">${title}</div><div>${sub}</div>${fx ? `<div class="fx">${fx}</div>` : ''}`);
+  parent.appendChild(d);
+}
+const pets = document.getElementById('pets');
+for (const p of PETS) cell(pets, ctx => drawPet(ctx, 0, 0, p.id, 0), `${p.name}`, `${p.sub}｜${rl(p.rarity)}${p.price ? '｜' + p.price : ''}`, p.rarity, p.fx || (p.unlock ? UNLOCK_TEXT[p.unlock] : ''));
+const eq = document.getElementById('equip');
+for (const s of SLOTS) {
+  const h = document.createElement('h2'); h.textContent = s.label; h.style.fontSize = '15px'; eq.appendChild(h);
+  const g = document.createElement('div'); g.className = 'grid'; eq.appendChild(g);
+  for (const it of ITEMS.filter(i => i.slot === s.key)) {
+    const e = {}; e[s.key] = s.key === 'head' ? it.head : s.key === 'chest' ? { px: it.px } : { color: it.color, extra: it.extra };
+    cell(g, ctx => drawPerson(ctx, 0, 0, 'DOWN', 0, LOOKS.docA, e), it.name, `${rl(it.rarity)}${it.price ? '｜' + it.price : ''}`, it.rarity, it.fx || (it.unlock ? '成就：' + UNLOCK_TEXT[it.unlock] : ''));
+  }
+}
+window.__done = true;
+</script></body></html>
