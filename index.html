@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>急診物語 ER Quest</title>
+  <meta name="description" content="急診住院醫師養成像素 RPG：問診、理學檢查、下 Order、處置，在時間壓力下救回病人。醫學教育用途。">
+  <meta name="theme-color" content="#18203a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="急診物語">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/Cubic_11.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="device">
+    <header id="brand">
+      <span class="logo">急診物語</span><span class="sub">ER QUEST</span>
+      <button id="mute" type="button" aria-label="音效開關">♪</button>
+    </header>
+    <div id="bezel">
+      <div id="screen"><div id="loading">載入中…</div></div>
+    </div>
+    <section id="controls" aria-label="遊戲按鍵">
+      <div id="dpad" role="group" aria-label="方向鍵">
+        <span class="arm up"></span><span class="arm down"></span>
+        <span class="arm left"></span><span class="arm right"></span>
+        <span class="hub"></span>
+      </div>
+      <div id="meta">
+        <button type="button" data-btn="START" class="pill">START</button>
+      </div>
+      <div id="ab">
+        <button type="button" data-btn="B" class="round b">B</button>
+        <button type="button" data-btn="A" class="round a">A</button>
+      </div>
+    </section>
+    <p id="keys">鍵盤：方向鍵移動 ｜ Z / Enter = A ｜ X / Esc = B ｜ Shift / M = START</p>
+    <noscript>此遊戲需要啟用 JavaScript。</noscript>
+  </main>
+  <script src="lib/phaser.min.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

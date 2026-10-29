@@ -1,0 +1,299 @@
+{
+  "id": "tension-ptx",
+  "version": 1,
+  "dex": {
+    "no": 1,
+    "name": "張力性氣胸",
+    "en": "Tension pneumothorax",
+    "type": "胸痛館",
+    "desc": "胸膜腔內氣體只進不出，壓迫縱膈腔、阻礙靜脈回流，造成阻塞性休克。是臨床診斷，必須立即減壓。"
+  },
+  "patient": { "name": "陳先生", "age": 35, "sex": "男", "cc": "機車自摔後胸痛、喘" },
+  "intro": [
+    "救護車送來一位病人！",
+    "35 歲男性，機車自摔，右胸撞上路邊護欄。",
+    "陳先生：「胸口…好痛…喘不過氣…」"
+  ],
+  "start": { "S": 70 },
+  "rate": { "clerk": 1.0, "resident": 2.0 },
+  "endAt": {
+    "clerk": { "S": 15, "text": ["監視器狂響！", "學長衝進來接手了病人…"], "reason": "takeover" },
+    "resident": { "S": 0, "text": ["病人失去脈搏…", "監視器顯示 PEA！", "急救小組衝了進來…"], "reason": "arrest" }
+  },
+  "vitals": [
+    { "S": 0,   "hr": 40,  "sbp": 40,  "dbp": 20, "rr": 8,  "spo2": 60 },
+    { "S": 20,  "hr": 146, "sbp": 64,  "dbp": 40, "rr": 42, "spo2": 72 },
+    { "S": 40,  "hr": 136, "sbp": 80,  "dbp": 50, "rr": 38, "spo2": 80 },
+    { "S": 55,  "hr": 128, "sbp": 90,  "dbp": 58, "rr": 34, "spo2": 85 },
+    { "S": 70,  "hr": 118, "sbp": 104, "dbp": 68, "rr": 30, "spo2": 89 },
+    { "S": 85,  "hr": 100, "sbp": 118, "dbp": 74, "rr": 20, "spo2": 95 },
+    { "S": 100, "hr": 88,  "sbp": 126, "dbp": 78, "rr": 16, "spo2": 98 }
+  ],
+  "o2Bonus": 4,
+  "alarms": [
+    { "below": 45, "text": ["※ 監視器警報！", "BP {bp}，SpO₂ {spo2}%！"] },
+    { "below": 25, "text": ["※※ 病人意識變差了！", "再不處理就來不及了！"] }
+  ],
+  "timers": {
+    "recur": {
+      "unless": "tube",
+      "modes": ["resident"],
+      "steps": [
+        { "say": ["※ SpO₂ 又開始往下掉…", "針頭可能扭折或阻塞了！"] },
+        { "fx": "alarm" },
+        { "unflag": "decompressed" },
+        { "flag": "recur" },
+        { "rate": 1.5 },
+        { "mistake": "no_tube_in_time", "text": "針刺後未及時放胸管，張力性氣胸復發", "w": 10 }
+      ]
+    }
+  },
+  "clues": {
+    "mech": "右胸撞擊",
+    "progress": "越來越喘",
+    "bs": "右側呼吸音消失",
+    "percuss": "右胸叩診鼓音",
+    "jvd": "頸靜脈怒張",
+    "trachea": "氣管偏移",
+    "sce": "皮下氣腫",
+    "pocus": "POCUS 無 lung sliding",
+    "shock": "低血壓、心搏過速"
+  },
+  "coreClues": ["mech", "bs", "percuss"],
+  "categories": {
+    "history": [
+      { "id": "h_mech", "label": "受傷機轉", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["你：「怎麼受傷的？」", "陳先生：「騎車打滑…右胸直接撞上護欄…」", "→ 右胸鈍挫傷，機轉明確。"] },
+        { "clue": "mech" } ] },
+      { "id": "h_onset", "label": "症狀變化", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["陳先生：「一開始還好…後來越來越喘…」", "→ 呼吸困難進行性惡化！"] },
+        { "clue": "progress" } ] },
+      { "id": "h_pmh", "label": "過去病史", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["陳先生：「沒有…身體一向很好…」", "→ 無心肺疾病史。"] } ] },
+      { "id": "h_ample", "label": "過敏/用藥/進食", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["無藥物過敏，無常規用藥。", "最後進食：2 小時前。"] } ] }
+    ],
+    "pe": [
+      { "id": "p_vs", "label": "複測生命徵象", "time": 1, "energy": 1, "steps": [
+        { "say": ["HR {hr}  BP {bp}", "RR {rr}  SpO₂ {spo2}%"] },
+        { "if": { "stabBelow": 62 }, "then": [ { "say": ["→ 低血壓、心搏過速：休克！"] }, { "clue": "shock" } ] } ] },
+      { "id": "p_inspect", "label": "視診頸部/胸廓", "time": 1, "energy": 2, "steps": [
+        { "say": ["右胸壁有擦傷，右側胸廓起伏較小。"] },
+        { "if": { "stabBelow": 62 },
+          "then": [ { "say": ["頸靜脈怒張 (JVD)！"] }, { "clue": "jvd" } ],
+          "else": [ { "say": ["頸靜脈不明顯。"] } ] },
+        { "if": { "stabBelow": 40 },
+          "then": [ { "say": ["氣管偏向左側！"] }, { "clue": "trachea" } ],
+          "else": [ { "say": ["氣管位置大致置中。"] } ] } ] },
+      { "id": "p_ausc", "label": "聽診呼吸音", "time": 1, "energy": 2, "steps": [
+        { "if": { "flag": "tube" },
+          "then": [ { "say": ["兩側呼吸音都聽得到了。"] } ],
+          "else": [ { "say": ["左側呼吸音正常。", "右側呼吸音…幾乎聽不到！"] }, { "clue": "bs" } ] } ] },
+      { "id": "p_percuss", "label": "叩診胸部", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["左胸叩診：正常。", "右胸叩診：鼓音（hyperresonance）！"] },
+        { "clue": "percuss" } ] },
+      { "id": "p_palp", "label": "觸診胸壁", "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["右胸壓痛，", "摸到雪花般的皮下氣腫（crepitus）。"] },
+        { "clue": "sce" } ] },
+      { "id": "p_heart", "label": "聽診心音", "time": 1, "energy": 1, "once": true, "steps": [
+        { "say": ["心搏過速，心音稍遠。", "沒有雜音。"] } ] }
+    ],
+    "order": [
+      { "id": "o_ecg", "label": "12-lead ECG", "time": 3, "energy": 3, "once": true, "steps": [
+        { "say": ["ECG：Sinus tachycardia。", "沒有 ST elevation。"] } ] },
+      { "id": "o_pocus", "label": "POCUS 肺部", "modes": ["resident"], "time": 2, "energy": 3, "steps": [
+        { "if": { "flag": "tube" },
+          "then": [ { "say": ["右前胸：lung sliding 回來了。"] } ],
+          "else": [
+            { "say": ["右前胸 B-mode：看不到 lung sliding。", "M-mode：barcode sign！", "→ 支持右側氣胸。"] },
+            { "clue": "pocus" },
+            { "good": "pocus", "text": "以 POCUS 床邊快速佐證" } ] } ] },
+      { "id": "o_pocus_c", "label": "請學長做POCUS", "modes": ["clerk"], "time": 2, "energy": 3, "once": true, "steps": [
+        { "say": ["學長拿起探頭掃了右前胸…", "學長：「看，沒有 lung sliding，", "M-mode 是 barcode sign。」"] },
+        { "clue": "pocus" } ] },
+      { "id": "o_cxr", "label": "胸部 X 光", "time": 0, "energy": 3, "steps": [
+        { "if": { "flag": "decompressed" },
+          "then": [ { "time": 6 }, { "say": ["CXR：肺已重新擴張。", "胸管位置良好。"] } ],
+          "else": [
+            { "say": ["等放射師把機器推過來…"] },
+            { "time": 10 },
+            { "say": ["CXR：右側大量氣胸，縱膈腔左移。", "→ 這本來就是臨床診斷，", "不該等影像！"] },
+            { "mistake": "cxr_delay", "text": "減壓前先等 CXR，延誤處置", "w": 25 } ] } ] },
+      { "id": "o_ct", "label": "胸部 CT", "time": 0, "energy": 5, "steps": [
+        { "if": { "flag": "tube" },
+          "then": [ { "time": 20 }, { "say": ["CT：右側多根肋骨骨折，", "合併肺挫傷。胸管位置良好。"] } ],
+          "else": [
+            { "say": ["病人被推往 CT 室…"] },
+            { "time": 6 },
+            { "fx": "alarm" },
+            { "say": ["CT 室傳來刺耳的警報聲！", "病人在掃描台上失去意識…"] },
+            { "mistake": "ct_unstable", "text": "把不穩定的病人送去 CT（死亡隧道）", "w": 60 },
+            { "end": "fail", "reason": "ct" } ] } ] },
+      { "id": "o_abg", "label": "動脈血氧 ABG", "time": 5, "energy": 3, "once": true, "steps": [
+        { "say": ["ABG：pH 7.31  PaCO₂ 48", "PaO₂ 58 mmHg", "→ 低血氧合併呼吸性酸中毒。"] } ] },
+      { "id": "o_lab", "label": "抽血 CBC/生化", "time": 2, "energy": 2, "once": true, "steps": [
+        { "say": ["檢體已送出，", "報告大約一小時後才會出來。"] } ] }
+    ],
+    "treat": [
+      { "id": "t_o2", "label": "給氧 NRM 15L", "modes": ["resident"], "time": 0, "energy": 1, "steps": [
+        { "if": { "flag": "o2" },
+          "then": [ { "say": ["已經在給氧了。"] } ],
+          "else": [ { "time": 1 }, { "say": ["戴上 Non-rebreathing mask，", "氧氣 15 L/min。"] }, { "flag": "o2" }, { "stab": 3, "cap": 85 },
+                    { "good": "o2", "text": "立即給予高流量氧氣" } ] } ] },
+      { "id": "t_o2_c", "label": "請護理師給氧", "modes": ["clerk"], "time": 0, "energy": 1, "steps": [
+        { "if": { "flag": "o2" },
+          "then": [ { "say": ["已經在給氧了。"] } ],
+          "else": [ { "time": 1 }, { "say": ["護理師幫病人戴上", "Non-rebreathing mask 15 L/min。"] }, { "flag": "o2" }, { "stab": 3, "cap": 85 },
+                    { "good": "o2", "text": "立即給予高流量氧氣" } ] } ] },
+      { "id": "t_iv", "label": "建立 IV 管路", "modes": ["resident"], "time": 0, "energy": 1, "steps": [
+        { "if": { "flag": "iv" },
+          "then": [ { "say": ["IV 管路已經建好了。"] } ],
+          "else": [ { "time": 2 }, { "say": ["建立兩條大號 IV 管路（18G）。"] }, { "flag": "iv" },
+                    { "good": "iv", "text": "建立 IV 管路" } ] } ] },
+      { "id": "t_iv_c", "label": "請護理師打IV", "modes": ["clerk"], "time": 0, "energy": 1, "steps": [
+        { "if": { "flag": "iv" },
+          "then": [ { "say": ["IV 管路已經建好了。"] } ],
+          "else": [ { "time": 2 }, { "say": ["護理師建立了兩條 18G IV。"] }, { "flag": "iv" },
+                    { "good": "iv", "text": "建立 IV 管路" } ] } ] },
+      { "id": "t_fluid", "label": "輸液 NS 500mL", "modes": ["resident"], "time": 0, "energy": 1, "steps": [
+        { "if": { "notFlag": "iv" },
+          "then": [ { "say": ["還沒有 IV 管路！"] } ],
+          "else": [ { "if": { "flag": "fluid" },
+                      "then": [ { "say": ["已經在輸液了。", "問題不在缺水…"] } ],
+                      "else": [ { "time": 2 }, { "say": ["輸液中…血壓稍微回升。", "但這只是治標，不是治本。"] }, { "flag": "fluid" }, { "stab": 4, "cap": 80 } ] } ] } ] },
+      { "id": "t_needle", "label": "針刺減壓", "modes": ["resident"], "time": 0, "energy": 4, "steps": [
+        { "if": { "flag": "decompressed" },
+          "then": [ { "say": ["已經減壓了。", "針頭只是暫時的，接下來呢？"] } ],
+          "else": [ { "choice": { "prompt": "穿刺位置？", "options": [
+            { "label": "右 第5肋間 腋中線前", "steps": [
+              { "time": 2 },
+              { "say": ["消毒，在右側第 5 肋間、", "腋中線前方進針…"] },
+              { "fx": "hiss" },
+              { "say": ["「嘶——！」大量氣體噴出！", "病人的呼吸明顯變順了。"] },
+              { "stab": 25, "cap": 85 }, { "rate": 0.1 }, { "flag": "decompressed" }, { "unflag": "recur" }, { "mark": "decompress" },
+              { "good": "needle", "text": "立即針刺減壓，位置正確（ATLS 第10版）" },
+              { "timer": { "id": "recur", "in": 15 } } ] },
+            { "label": "右 第2肋間 鎖骨中線", "steps": [
+              { "time": 2 },
+              { "say": ["消毒，在右側第 2 肋間、", "鎖骨中線進針…"] },
+              { "fx": "hiss" },
+              { "say": ["「嘶——！」氣體噴出！", "減壓成功。"] },
+              { "stab": 25, "cap": 85 }, { "rate": 0.1 }, { "flag": "decompressed" }, { "unflag": "recur" }, { "mark": "decompress" },
+              { "good": "needle", "text": "減壓成功（第 2 肋間為替代位置，胸壁厚者易失敗）" },
+              { "timer": { "id": "recur", "in": 15 } } ] },
+            { "label": "左 第2肋間 鎖骨中線", "steps": [
+              { "time": 2 },
+              { "say": ["在左側第 2 肋間進針…", "…沒有氣體跑出來。", "→ 病人是『右側』氣胸！"] },
+              { "stab": -5 },
+              { "mistake": "wrong_side", "text": "針刺減壓穿錯邊", "w": 25 } ] },
+            { "label": "右 第2肋間 胸骨旁", "steps": [
+              { "time": 2 },
+              { "say": ["在胸骨旁進針…", "針頭一進去就冒血！", "→ 太靠近胸骨，可能傷到內乳動脈。"] },
+              { "stab": -8 },
+              { "mistake": "ima", "text": "穿刺太靠近胸骨（內乳動脈損傷風險）", "w": 20 } ] }
+          ] } } ] } ] },
+      { "id": "t_tube", "label": "放置胸管", "modes": ["resident"], "time": 0, "energy": 5, "steps": [
+        { "if": { "flag": "tube" },
+          "then": [ { "say": ["胸管已經放好了。"] } ],
+          "else": [ { "choice": { "prompt": "胸管位置？", "options": [
+            { "label": "右 第5肋間 腋中線前", "steps": [
+              { "time": 8 },
+              { "say": ["消毒、局部麻醉、鈍性分離…", "手指探入胸膜腔，置入胸管！", "水封瓶持續冒泡。"] },
+              { "fx": "heal" },
+              { "stab": 30, "cap": 92 }, { "rate": 0 }, { "flag": "tube" }, { "flag": "decompressed" }, { "mark": "decompress" },
+              { "good": "tube", "text": "完成胸管置放（確定性治療）" } ] },
+            { "label": "右 第2肋間 鎖骨中線", "steps": [
+              { "time": 2 },
+              { "say": ["學長：「等等！胸管不是放這裡！", "要放在安全三角：", "第 5 肋間、腋中線前。」"] },
+              { "mistake": "tube_site", "text": "胸管位置錯誤（應在安全三角）", "w": 10 } ] }
+          ] } } ] } ] },
+      { "id": "t_intubate", "label": "插管+正壓通氣", "modes": ["resident"], "time": 0, "energy": 4, "steps": [
+        { "if": { "flag": "decompressed" },
+          "then": [ { "say": ["呼吸已經改善，", "暫時不需要插管。"] } ],
+          "else": [
+            { "time": 5 },
+            { "say": ["插管成功，開始正壓通氣…"] },
+            { "fx": "alarm" },
+            { "say": ["血壓急速下降！SpO₂ 掉到底！", "→ 正壓會讓張力性氣胸急速惡化！"] },
+            { "stab": -35 },
+            { "mistake": "ppv", "text": "未減壓就插管正壓通氣", "w": 30 } ] } ] },
+      { "id": "t_ntg", "label": "給 NTG+Aspirin", "modes": ["resident"], "time": 1, "energy": 2, "once": true, "steps": [
+        { "say": ["你給了 NTG 舌下含片…"] },
+        { "fx": "alarm" },
+        { "say": ["血壓掉了下來！", "→ 這不是 ACS！小心定錨偏誤。"] },
+        { "stab": -10 },
+        { "mistake": "acs_anchor", "text": "定錨在 ACS，給予 NTG", "w": 25 } ] },
+      { "id": "t_call", "label": "呼叫學長求助", "time": 1, "energy": 0, "steps": [
+        { "hint": 1 },
+        { "if": { "notClue": "bs" },
+          "then": [ { "say": ["學長：「先聽兩側呼吸音，", "再敲敲看！」"] } ],
+          "else": [ { "if": { "mode": "clerk" },
+            "then": [ { "say": ["學長：「證據夠了就趕快跟我報告！", "病人不會等你喔。」"] } ],
+            "else": [ { "if": { "notFlag": "decompressed" },
+              "then": [ { "say": ["學長：「這是臨床診斷，", "不用等影像，馬上減壓！」"] } ],
+              "else": [ { "if": { "notFlag": "tube" },
+                "then": [ { "say": ["學長：「針頭只是暫時的，", "接著要放胸管。」"] } ],
+                "else": [ { "say": ["學長：「做得不錯！", "決定病人的去向吧。」"] } ] } ] } ] } ] } ] },
+      { "id": "t_present", "label": "向學長報告", "modes": ["clerk"], "time": 0, "energy": 0, "steps": [
+        { "say": ["你：「學長，我想報告這位病人。」"] },
+        { "choice": { "prompt": "最可能的診斷？", "options": [
+          { "label": "張力性氣胸", "steps": [ { "flag": "dx_ok" } ] },
+          { "label": "急性心肌梗塞", "steps": [ { "mistake": "dx_acs", "text": "診斷錯誤：定錨在 ACS", "w": 40 } ] },
+          { "label": "心包填塞", "steps": [ { "mistake": "dx_tamp", "text": "診斷錯誤：心包填塞（呼吸音與叩診可鑑別）", "w": 40 } ] },
+          { "label": "肺栓塞", "steps": [ { "mistake": "dx_pe", "text": "診斷錯誤：肺栓塞（外傷機轉＋單側呼吸音消失）", "w": 40 } ] }
+        ] } },
+        { "choice": { "prompt": "下一步？", "options": [
+          { "label": "立即針刺減壓", "steps": [ { "flag": "next_ok" } ] },
+          { "label": "先照胸部 X 光", "steps": [ { "mistake": "next_cxr", "text": "建議先照 CXR（張力性氣胸不該等影像）", "w": 30 } ] },
+          { "label": "安排胸部 CT", "steps": [ { "mistake": "next_ct", "text": "建議送 CT（不穩定病人禁忌）", "w": 40 } ] },
+          { "label": "給 Aspirin+NTG", "steps": [ { "mistake": "next_ntg", "text": "建議給 NTG（會讓阻塞性休克惡化）", "w": 40 } ] }
+        ] } },
+        { "if": { "all": [ { "flag": "dx_ok" }, { "flag": "next_ok" } ] },
+          "then": [
+            { "say": ["學長：「依據呢？」"] },
+            { "if": { "all": [ { "cluesAtLeast": 3 }, { "anyClue": ["bs", "percuss", "pocus"] } ] },
+              "then": [ { "say": ["你：「{cluesList}。」", "學長：「很好！我來減壓，你幫忙！」"] },
+                        { "good": "present", "text": "診斷與下一步正確，報告有理有據" } ],
+              "else": [ { "say": ["你：「呃…感覺很像…」", "學長：「依據太少！", "下次理學檢查要做完整。」"] },
+                        { "mistake": "thin", "text": "報告依據不足（理學檢查不完整）", "w": 15 } ] },
+            { "fx": "hiss" },
+            { "say": ["「嘶——！」大量氣體噴出！", "病人的呼吸明顯變順了。"] },
+            { "stab": 25, "cap": 90 }, { "rate": 0 }, { "mark": "decompress" },
+            { "end": "win" } ],
+          "else": [
+            { "say": ["學長皺起眉頭…", "學長：「右邊呼吸音呢？叩診呢？」", "學長：「這是張力性氣胸！馬上減壓！」"] },
+            { "fx": "hiss" },
+            { "end": "fail", "reason": "present" } ] } ] },
+      { "id": "t_dispo", "label": "決定病人去向", "modes": ["resident"], "time": 0, "energy": 0, "steps": [
+        { "if": { "notFlag": "tube" },
+          "then": [ { "say": ["學長：「確定性治療（胸管）", "完成了嗎？」"] } ],
+          "else": [ { "choice": { "prompt": "Disposition？", "options": [
+            { "label": "會診胸外，收加護", "steps": [
+              { "say": ["會診胸腔外科，", "安排入住外科加護病房。", "病人狀況穩定，順利轉出急診！"] },
+              { "good": "dispo", "text": "正確 Disposition：會診胸外、收住院" },
+              { "end": "win" } ] },
+            { "label": "急診留觀 6 小時", "steps": [
+              { "say": ["學長：「放了胸管的外傷病人，", "應該要住院喔。」"] },
+              { "mistake": "dispo_obs", "text": "Disposition 不足：放胸管應住院", "w": 10 },
+              { "end": "win" } ] },
+            { "label": "可以出院", "steps": [
+              { "say": ["帶著胸管…出院？！", "學長：「絕對不行！」"] },
+              { "mistake": "dispo_dc", "text": "不安全出院", "w": 50 },
+              { "end": "fail", "reason": "dispo" } ] }
+          ] } } ] } ] }
+    ]
+  },
+  "teaching": [
+    "張力性氣胸是「臨床診斷」：外傷或正壓通氣＋呼吸窘迫＋單側呼吸音消失＋低血壓 → 立即減壓，不等影像。",
+    "ATLS 第10版：成人針刺減壓建議第 4/5 肋間、腋中線前方；第 2 肋間鎖骨中線為替代位置，胸壁厚者失敗率較高。",
+    "氣管偏移、頸靜脈怒張是晚期且不一定出現的徵象；沒看到不能排除。",
+    "針刺只是暫時處置，之後必須放胸管（安全三角：第 5 肋間、腋中線前）。",
+    "POCUS：lung sliding 消失＋M-mode barcode sign，可在床邊幾分鐘內佐證。",
+    "正壓通氣會讓未減壓的氣胸急速惡化；不穩定病人不送 CT。"
+  ],
+  "refs": [
+    "American College of Surgeons. ATLS® Advanced Trauma Life Support, 10th ed. 2018.",
+    "Roberts DJ, et al. Clinical presentation of patients with tension pneumothorax: a systematic review. Ann Surg. 2015;261:1068-78.",
+    "Volpicelli G, et al. International evidence-based recommendations for point-of-care lung ultrasound. Intensive Care Med. 2012;38:577-91."
+  ]
+}
