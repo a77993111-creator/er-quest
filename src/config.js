@@ -1,6 +1,6 @@
 export const GAME_TITLE = '急診物語';
 export const GAME_SUBTITLE = 'ER QUEST';
-export const VERSION = 'v0.3.0';
+export const VERSION = 'v0.4.0';
 export const AUTHOR = 'Dr. Lo';
 export const CASES = ['tension-ptx'];
 export const ENDGAME_NOTE = 'PGY 篇開發中';

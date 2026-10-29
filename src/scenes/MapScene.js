@@ -1,13 +1,13 @@
 import { input } from '../input.js';
 import { audio } from '../audio.js';
 import { C, DIR_ORDER, bakePlayer } from '../art.js';
-import { MAP, MAP_W, MAP_H, TILE, SOLID, START, BED_SPOT, NPCS, SIGNS, OBJECT_TEXT, roomPatientSpot } from '../mapData.js';
+import { MAP_W, MAP_H, TILE, SOLID, AREAS } from '../mapData.js';
 import { txt, Dialog, menu, yesNo, makeWindow, wait, wrap, uiConfig, W, H } from '../ui.js';
 import {
   state, persist, wipe, level, rankTitle, RANK_LABEL, passedCount, examEligible, generateShift, shiftComplete,
-  roomNo, minicexAvg, bar9,
+  roomNo, minicexAvg, bar9, areaOf, tierOf, shiftStale, examRule, casesOf,
 } from '../save.js';
-import { CLERK_CASES, BOSS_CASE, MINICEX } from '../engine/clerkMenus.js';
+import { CLERK_CASES, BOSS_CASE, PGY_CASES, PGY_BOSS, MINICEX } from '../engine/clerkMenus.js';
 import { SLOTS, RARITY, ITEMS, PETS, BADGES, UNLOCK_TEXT } from '../cosmetics.js';
 import { equipFor, fx, owns, itemById, dailyReset, addCoins, SPEEDS, adminDevice } from '../progress.js';
 
@@ -28,7 +28,13 @@ export class MapScene extends Phaser.Scene {
     this.moving = false;
     this.stepParity = 0;
     this.turnUntil = 0;
-    if (!this.s.shift) generateShift();
+    data = data || {};
+    const work = areaOf(this.s.rank);
+    this.areaKey = data.area || ((data.newDay || data.newGame) ? work : (this.s.pos?.area || work));
+    if (this.areaKey === 'obs' && this.s.rank === 'clerk') this.areaKey = 'clinic';
+    this.A = AREAS[this.areaKey];
+    this.isWork = this.areaKey === work;
+    if (shiftStale(this.s)) generateShift();
     dailyReset(this.s);
     if (fx.freeCoffee(this.s) && !this.s.daily.freeCoffee) {
       this.s.daily.freeCoffee = true;
@@ -38,20 +44,22 @@ export class MapScene extends Phaser.Scene {
     persist();
     bakePlayer(this, this.s.look, equipFor(this.s));
 
-    this.add.image(0, 0, 'map').setOrigin(0, 0).setDepth(0);
+    this.add.image(0, 0, 'map_' + this.areaKey).setOrigin(0, 0).setDepth(0);
 
-    this.npcs = NPCS.map(n => this.addNpc(n));
-    // 今天班表上的病人
-    this.s.shift.list.forEach((e, idx) => {
+    this.npcs = this.A.npcs.map(n => this.addNpc(n));
+    // 今天班表上的病人（只出現在目前職級的工作區）
+    if (this.isWork) this.s.shift.list.forEach((e, idx) => {
       if (e.done) return;
       const c = state.cases[e.id];
+      if (!c) return;
       const p = { ...c.patient, ...(e.variant || {}) };
-      const spot = roomPatientSpot(e.room);
+      const spot = this.A.spot(e.room);
       this.npcs.push(this.addNpc({ id: 'pt', idx, x: spot.x, y: spot.y, dir: 'DOWN', look: ptLook(p), name: p.name }));
     });
 
-    let p = this.s.pos || START;
-    if (data?.newDay || data?.newGame) p = data.newGame ? START : BED_SPOT;
+    let p = (this.s.pos && (this.s.pos.area || 'clinic') === this.areaKey) ? this.s.pos : this.A.start;
+    if (data.newDay || data.newGame) p = data.newGame ? this.A.start : this.A.bed;
+    if (data.door) p = this.A.door;
     this.px = p.x; this.py = p.y; this.dir = p.dir || 'UP';
     this.player = this.add.sprite(this.px * TILE, this.py * TILE, 'p_player', frameOf(this.dir, 0))
       .setOrigin(0, 0).setDepth(10 + this.py);
@@ -74,14 +82,14 @@ export class MapScene extends Phaser.Scene {
     this.time.addEvent({
       delay: 2400, loop: true, callback: () => {
         if (this.busy) return;
-        const n = Phaser.Utils.Array.GetRandom(this.npcs.filter(x => x.id === 'chief' || x.id === 'pt'));
+        const n = Phaser.Utils.Array.GetRandom(this.npcs.filter(x => ['chief', 'echief', 'pt', 'family'].includes(x.id)));
         if (!n) return;
         n.dir = Phaser.Utils.Array.GetRandom(DIR_ORDER);
         n.sp.setFrame(frameOf(n.dir, 0));
       },
     });
 
-    this.intro(data || {});
+    this.intro(data);
   }
 
   addNpc(n) {
@@ -92,7 +100,8 @@ export class MapScene extends Phaser.Scene {
   updateHud() {
     const s = this.s;
     const left = s.shift.list.filter(x => !x.done).length;
-    const task = !s.shift.briefed ? '找總醫師晨會' : left ? `待看病人 ${left} 位` : s.shift.ipass == null ? '找總醫師交班' : '去值班室休息';
+    let task = !s.shift.briefed ? '找總醫師晨會' : left ? `待看病人 ${left} 位` : s.shift.ipass == null ? '找總醫師交班' : '去值班室休息';
+    if (!this.isWork && !(s.shift.ipass != null)) task = `回${AREAS[areaOf(s.rank)].name}`;
     this.hud.setText(`第${s.day}天 ${RANK_LABEL[s.rank]} Lv.${level()}｜${task}`);
     this.coinTxt.setText(`白袍幣 ${s.coins}${s.admin || adminDevice() ? '・管' : ''}`);
     this.coinTxt.setX(W - 4 - this.coinTxt.width);
@@ -110,8 +119,22 @@ export class MapScene extends Phaser.Scene {
       ]);
     } else if (data.newDay) {
       await this.dlg.say([`第 ${this.s.day} 天早上。精神值完全恢復了！`, '先去找總醫師晨會吧。']);
+    } else if (data.evolved && this.s.rank === 'pgy') {
+      await this.dlg.say([
+        '長白袍穿起來，感覺就是不一樣。',
+        '急診總醫師：「歡迎來到急診留觀區！我是這裡的總醫師。」',
+        '「PGY 開始要自己下處置：給氧、輸液、用藥，病人會隨時間變化，拖太久會惡化。」',
+        '「看完要決定 Disposition：出院、留觀、住院還是加護病房。」',
+        '「福利社和置物櫃在一般診區，從左邊的紅門過去。」',
+      ]);
+      this.s.flags.obsIntro = true; persist();
     } else if (data.evolved) {
-      await this.dlg.say(['長白袍穿起來，感覺就是不一樣。', '總醫師：「恭喜升上 PGY！PGY 篇正在準備中。」']);
+      await this.dlg.say(['刷手服加長白袍，你已經是 R1 了！', '急診總醫師：「恭喜！急救室的 R1 篇正在準備中，這段時間可以繼續在留觀區值班。」']);
+    } else if (data.door) {
+      if (this.areaKey === 'obs' && !this.s.flags.obsIntro) {
+        this.s.flags.obsIntro = true; persist();
+        await this.dlg.say(['（急診留觀區，監視器的聲音此起彼落…）', '急診總醫師：「PGY 嗎？晨會來護理站前面找我。」']);
+      }
     } else if (data.fromIpass) {
       // 交班後直接回到地圖
     } else if (data.fromBattle) {
@@ -122,12 +145,14 @@ export class MapScene extends Phaser.Scene {
     if (examEligible() && !this.s.flags.examNotified) {
       this.s.flags.examNotified = true;
       persist();
-      await this.dlg.say(['總醫師：「你已經有資格參加升等考了！」', '「準備好就去右下的主治辦公室。」']);
+      await this.dlg.say(this.s.rank === 'clerk'
+        ? ['總醫師：「你已經有資格參加升等考了！」', '「準備好就去右下的主治辦公室。」']
+        : ['急診總醫師：「你已經有資格參加 PGY 升等考了！」', '「準備好就去右下的急救室，主任在那裡等你。」']);
     }
     this.busy = false;
   }
 
-  tileAt(x, y) { return y < 0 || y >= MAP_H || x < 0 || x >= MAP_W ? '#' : MAP[y][x]; }
+  tileAt(x, y) { return y < 0 || y >= MAP_H || x < 0 || x >= MAP_W ? '#' : this.A.map[y][x]; }
   npcAt(x, y) { return this.npcs.find(n => n.x === x && n.y === y); }
   blocked(x, y) { return SOLID.has(this.tileAt(x, y)) || !!this.npcAt(x, y); }
 
@@ -182,7 +207,7 @@ export class MapScene extends Phaser.Scene {
     try { await fn(); } finally { this.busy = false; this.updateHud(); input.flush(); }
   }
 
-  savePos() { this.s.pos = { x: this.px, y: this.py, dir: this.dir }; }
+  savePos() { this.s.pos = { x: this.px, y: this.py, dir: this.dir, area: this.areaKey }; }
 
   go(key, data) {
     this.busy = true;
@@ -208,17 +233,33 @@ export class MapScene extends Phaser.Scene {
     }
     const ch = this.tileAt(tx, ty);
     const key = `${tx},${ty}`;
-    if (SIGNS[key]) { await this.dlg.say(SIGNS[key]); return; }
+    if (this.A.signs[key]) { await this.dlg.say(this.A.signs[key]); return; }
+    if (ch === 'E') { await this.door(); return; }
     if (ch === 'r') { await this.rest(); return; }
     if (ch === 'w') { await this.wardrobe(); return; }
     if (ch === 'L') { await this.examDoor(); return; }
-    if (OBJECT_TEXT[ch]) await this.dlg.say(OBJECT_TEXT[ch]);
+    if (this.A.objectText[ch]) await this.dlg.say(this.A.objectText[ch]);
+  }
+
+  async door() {
+    if (this.areaKey === 'clinic' && this.s.rank === 'clerk') { await this.dlg.say(this.A.objectText.E); return; }
+    const to = this.areaKey === 'clinic' ? 'obs' : 'clinic';
+    audio.sfx('select');
+    this.busy = true;
+    this.savePos();
+    this.s.pos = { ...AREAS[to].door, area: to };
+    persist();
+    this.cameras.main.fadeOut(250, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.restart({ area: to, door: true }));
+    await wait(this, 2000);
   }
 
   patientLine(e) {
     const c = state.cases[e.id];
     const p = { ...c.patient, ...(e.variant || {}) };
-    return `第 ${roomNo(e.room)} 診間：${p.name}，${p.age} 歲，${c.patient.cc}。`;
+    return this.s.shift.tier === 'pgy' || this.areaKey === 'obs'
+      ? `留觀 ${roomNo(e.room)} 床：${p.name}，${p.age} 歲，${c.patient.cc}。`
+      : `第 ${roomNo(e.room)} 診間：${p.name}，${p.age} 歲，${c.patient.cc}。`;
   }
 
   async talk(npc) {
@@ -232,14 +273,22 @@ export class MapScene extends Phaser.Scene {
       else this.dlg.hide();
       return;
     }
+    if (npc.id === 'chief' && this.s.rank !== 'clerk') {
+      await this.dlg.say(['總醫師：「你已經是 PGY 了！」', '「你的班在急診留觀區，從右邊的紅門過去。」', '「有空也可以回來福利社逛逛。」']);
+      return;
+    }
     switch (npc.id) {
+      case 'echief':
       case 'chief': {
         if (!sh.briefed) {
           await this.dlg.say([
-            `總醫師：「早安！第 ${s.day} 天晨會開始。」`,
+            `${npc.name}：「早安！第 ${s.day} 天晨會開始。」`,
             '「今天你負責兩位病人：」',
             ...sh.list.map(e => this.patientLine(e)),
-            '「問診、PE 要有重點，檢查不要亂開。看完要跟學長報告診斷和鑑別診斷。」',
+            ...(sh.tier === 'pgy'
+              ? ['「先穩定病人，處置不要拖。看完跟我報告診斷、DDx 和 Disposition。」']
+              : ['「問診、PE 要有重點，檢查不要亂開。看完要跟學長報告診斷和鑑別診斷。」']),
+            ...(sh.list.some(e => e.proxy) ? ['「有位病人沒辦法自己說清楚，家屬會陪同。家屬講的要記得查證。」'] : []),
           ]);
           sh.briefed = true;
           persist();
@@ -269,6 +318,19 @@ export class MapScene extends Phaser.Scene {
       case 'boss':
         await this.dlg.say(['（主治在辦公室裡看論文。）']);
         break;
+      case 'onurse':
+        await this.dlg.say([
+          '留觀區護理師：「學長好！」',
+          '「病人如果血壓掉、SpO₂ 掉，監視器會叫，要趕快處理喔。」',
+          '「家屬說的用藥常常不準，雲端藥歷查一下比較保險。」',
+        ]);
+        break;
+      case 'pboss':
+        await this.dlg.say(['（急診部主任正在急救室裡指導學弟妹。）']);
+        break;
+      case 'family':
+        await this.dlg.say(['家屬：「醫生，我爸爸已經等很久了，到底怎麼樣了？」', '（家屬的焦慮是真的。先自我介紹、說明現在在做什麼，會讓他們安心很多。）']);
+        break;
       case 'shop':
         await this.shop();
         break;
@@ -277,13 +339,20 @@ export class MapScene extends Phaser.Scene {
 
   async examDoor() {
     const s = this.s;
-    if (s.rank !== 'clerk') { await this.dlg.say(['【主治辦公室】', '升等考已經通過了！']); return; }
-    if (!examEligible()) {
-      await this.dlg.say(['【主治辦公室】升等考', `資格：Lv.10（目前 Lv.${level()}）`, `　　　10 案中 8 案拿到 B 以上（目前 ${passedCount()} 案）`]);
+    const clinic = this.areaKey === 'clinic';
+    const room = clinic ? '【主治辦公室】' : '【急救室】';
+    const mine = clinic ? s.rank === 'clerk' : s.rank === 'pgy';
+    if (!mine) {
+      await this.dlg.say(clinic || s.rank !== 'clerk' ? [room, '這個升等考你已經通過了！'] : [room, '還沒輪到你。']);
       return;
     }
-    this.dlg.set('門上寫著「升等考」。要挑戰嗎？');
-    if (await yesNo(this)) { this.dlg.hide(); this.go('ClerkBattle', { caseId: BOSS_CASE }); }
+    const rule = examRule();
+    if (!examEligible()) {
+      await this.dlg.say([`${room}升等考`, `資格：Lv.${rule.lv}（目前 Lv.${level()}）`, `　　　10 案中 ${rule.need} 案拿到 B 以上（目前 ${passedCount()} 案）`]);
+      return;
+    }
+    this.dlg.set(clinic ? '門上寫著「升等考」。要挑戰嗎？' : '急診部主任：「PGY 升等考，準備好了嗎？」');
+    if (await yesNo(this)) { this.dlg.hide(); this.go('ClerkBattle', { caseId: clinic ? BOSS_CASE : PGY_BOSS }); }
     else this.dlg.hide();
   }
 
@@ -292,7 +361,7 @@ export class MapScene extends Phaser.Scene {
       this.dlg.set('今天的工作都完成了。要下班休息嗎？');
       if (await yesNo(this)) {
         this.dlg.hide();
-        this.s.pos = { ...BED_SPOT };
+        this.s.pos = { ...this.A.bed, area: this.areaKey };
         persist();
         audio.stop();
         this.cameras.main.fadeOut(500, 0, 0, 0);
@@ -537,7 +606,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   async dex() {
-    const ids = [...CLERK_CASES, BOSS_CASE];
+    const ids = [...CLERK_CASES, BOSS_CASE, ...(this.s.rank !== 'clerk' ? [...PGY_CASES, PGY_BOSS] : [])].filter(id => state.cases[id]);
     const items = ids.map((id, k) => {
       const c = state.cases[id];
       const d = this.s.cases[id];
@@ -545,7 +614,7 @@ export class MapScene extends Phaser.Scene {
       return { label: `No.${String(k + 1).padStart(3, '0')} ${caught ? c.dex.name : '？？？？'}`, right: d?.best ? d.best : (d ? '遇過' : ''), id, caught };
     });
     const objs = [makeWindow(this, 2, 2, W - 4, 20, 'paper', 280)];
-    objs.push(txt(this, 10, 6, '疾病圖鑑・一般診區', C.ink).setScrollFactor(0).setDepth(281));
+    objs.push(txt(this, 10, 6, this.s.rank === 'clerk' ? '疾病圖鑑・一般診區' : '疾病圖鑑・一般診區＋留觀區', C.ink).setScrollFactor(0).setDepth(281));
     const got = items.filter(x => x.caught).length;
     const cnt = txt(this, 0, 6, `${got}/${items.length}`, '#806040').setScrollFactor(0).setDepth(281);
     cnt.setX(W - 12 - cnt.width);

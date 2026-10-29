@@ -2,7 +2,7 @@
 import { input } from '../input.js';
 import { audio } from '../audio.js';
 import { txt, wrap, makeWindow, wait, W, H, LINE_H } from '../ui.js';
-import { state, persist, level, rankTitle, passedCount, minicexAvg, bar9, nextDay, examEligible, snapshotMinicex } from '../save.js';
+import { state, persist, level, rankTitle, passedCount, minicexAvg, bar9, nextDay, examEligible, snapshotMinicex, examRule } from '../save.js';
 import { afterDay, fx } from '../progress.js';
 import { MINICEX } from '../engine/clerkMenus.js';
 
@@ -38,8 +38,8 @@ export class DayReportScene extends Phaser.Scene {
         `交班 I-PASS：${s.shift?.ipass ?? '—'} 分`,
         `今日 EXP +${s.today.exp}　白袍幣 +${s.today.coins || 0}（持有 ${s.coins}）`,
         `Lv.${level()}　${rankTitle()}　（${s.exp} EXP）`,
-        `升等考：Lv ${Math.min(level(), 10)}/10、B 以上 ${passedCount()}/8 案`,
-        examEligible() ? '★ 已取得升等考資格！到主治辦公室挑戰。' : '',
+        examRule() ? `升等考：Lv ${Math.min(level(), examRule().lv)}/${examRule().lv}、B 以上 ${passedCount()}/${examRule().need} 案` : '',
+        examEligible() ? `★ 已取得升等考資格！到${s.rank === 'clerk' ? '主治辦公室' : '急救室'}挑戰。` : '',
       ].filter(Boolean),
       ['Mini-CEX 累積平均（1–9）', ...MINICEX.map(m => `${m.label.padEnd(4, '　')} ${bar9(avg[m.key])} ${avg[m.key].toFixed(1)}`), '', '明天會優先安排還沒通過的案例。'],
     ];

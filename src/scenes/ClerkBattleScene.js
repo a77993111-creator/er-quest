@@ -3,12 +3,14 @@ import { C, bakePortrait, portraitKey, bakePlayer } from '../art.js';
 import { equipFor, fx } from '../progress.js';
 import { drawEcg, ecgType } from '../ecg.js';
 import { PE_NOTES } from '../engine/clerkMenus.js';
+import { makeProxy } from '../engine/clerkEngine.js';
 import { txt, Dialog, menu, multiMenu, chooseLong, yesNo, wait, shuffle, W, H } from '../ui.js';
-import { state } from '../save.js';
+import { state, seededRnd } from '../save.js';
 import { ClerkEngine, introFor } from '../engine/clerkEngine.js';
 
 const hex = s => Phaser.Display.Color.HexStringToColor(s).color;
-const CMDS = [{ key: 'hx', label: '問診' }, { key: 'pe', label: '理學檢查' }, { key: 'lab', label: '檢查' }, { key: 'report', label: '報告' }];
+const CMDS_CLERK = [{ key: 'hx', label: '問診' }, { key: 'pe', label: '理學檢查' }, { key: 'lab', label: '檢查' }, { key: 'report', label: '報告' }];
+const famLook = who => (/女兒|媽媽|太太|外傭|阿姨|姊|妹|奶奶|阿嬤/.test(who) ? 'fam_f' : 'fam_m');
 
 export class ClerkBattleScene extends Phaser.Scene {
   constructor() { super('ClerkBattle'); }
@@ -19,14 +21,20 @@ export class ClerkBattleScene extends Phaser.Scene {
     this.classroom = !!data.classroom;
     const shiftEntry = data.shiftIdx != null ? state.save.shift?.list[data.shiftIdx] : null;
     this.variant = shiftEntry?.variant || null;
+    this.isBoss = !!this.d.boss;
+    this.pgy = this.d.tier === 'pgy';
+    const seed = data.proxySeed ?? shiftEntry?.proxy ?? null;
+    this.proxy = seed && !this.isBoss ? makeProxy(this.d, seededRnd(seed)) : null;
+    this.cmds = [...CMDS_CLERK.slice(0, 3), ...(this.pgy ? [{ key: 'tx', label: '處置' }] : []), ...(this.proxy ? [{ key: 'verify', label: '查證' }] : []), CMDS_CLERK[3]];
     this.engine = new ClerkEngine(this.d, {
+      proxy: this.proxy || undefined,
       energy: this.classroom ? 100 : state.save.energy,
       variant: this.variant || undefined,
       vitals: shiftEntry?.vitals || undefined,
       energyMult: this.classroom ? 1 : fx.energyMult(state.save),
     });
     this.energyMax = this.classroom ? 100 : fx.energyMax(state.save);
-    this.isBoss = !!this.d.boss;
+    this.who = this.isBoss ? (this.pgy ? '主任' : '主治') : (this.pgy ? '總醫師' : '學長');
     this.done = false;
 
     this.drawBackground();
@@ -41,7 +49,7 @@ export class ClerkBattleScene extends Phaser.Scene {
 
   drawBackground() {
     const g = this.add.graphics();
-    const wall = this.isBoss ? '#e9e2ea' : '#e2ece6';
+    const wall = this.isBoss ? '#e9e2ea' : this.pgy ? '#e4e6f0' : '#e2ece6';
     g.fillStyle(hex(wall), 1).fillRect(0, 0, W, 74);
     g.fillStyle(hex('#cfdcd6'), 0.6);
     for (let x = 0; x < W; x += 24) g.fillRect(x, 0, 1, 74);
@@ -66,6 +74,9 @@ export class ClerkBattleScene extends Phaser.Scene {
     const look = state.save.look || 'docA';
     if (!this.classroom) bakePlayer(this, look, equipFor(state.save));
     this.doc = this.add.image(W + 10, 62, this.classroom ? 'back_docA' : 'back_player').setOrigin(0, 0);
+    if (this.proxy) {
+      this.fam = this.add.sprite(W + 40, 8, 'p_' + famLook(this.proxy.who), 0).setOrigin(0, 0).setScale(1.5).setDepth(5);
+    }
   }
 
   drawPanels() {
@@ -150,18 +161,21 @@ export class ClerkBattleScene extends Phaser.Scene {
   async run() {
     this.tweens.add({ targets: this.patient, x: this.patientX, duration: 700, ease: 'Quad.out' });
     this.tweens.add({ targets: this.doc, x: 14, duration: 700, ease: 'Quad.out' });
+    if (this.fam) this.tweens.add({ targets: this.fam, x: 134, duration: 700, ease: 'Quad.out' });
     await wait(this, 750);
     await this.dlg.say(introFor(this.d, this.variant));
+    if (this.proxy) await this.familyOpen();
     if (this.classroom) await this.dlg.say(['【課堂模式】每一步都可以先停下來討論，再決定要怎麼做。']);
 
     let last = 0;
     while (!this.done) {
       this.dlg.set('要怎麼做？');
-      const cmd = await menu(this, CMDS.map(c => ({ label: c.label })), {
-        cols: 2, x: 104, y: 110, w: 136, h: 50, colW: 56, rowH: 18, cancel: false, depth: 300, start: last,
+      const three = this.cmds.length > 4;
+      const cmd = await menu(this, this.cmds.map(c => ({ label: c.label })), {
+        cols: 2, x: 104, y: 110, w: 136, h: 50, colW: 56, rowH: three ? 13 : 18, cancel: false, depth: 300, start: last,
       });
       last = cmd;
-      const key = CMDS[cmd].key;
+      const key = this.cmds[cmd].key;
       if (key === 'report') { if (await this.report()) break; continue; }
       let items, ids;
       if (key === 'hx') {
@@ -172,6 +186,14 @@ export class ClerkBattleScene extends Phaser.Scene {
         const l = this.engine.peList();
         items = l.map(x => ({ label: (x.done ? '√' : '') + x.label, dim: x.done })); ids = l.map(x => x.id);
         this.dlg.set('理學檢查：要檢查哪裡？（B 返回）');
+      } else if (key === 'tx') {
+        const l = this.engine.txList();
+        items = l.map(x => ({ label: (x.done ? '√' : '') + x.label, right: `${x.time}分`, dim: x.done })); ids = l.map(x => x.id);
+        this.dlg.set('處置：要給什麼？（B 返回）');
+      } else if (key === 'verify') {
+        const l = this.engine.verifyList();
+        items = l.map(x => ({ label: (x.done ? '√' : '') + x.label, right: `${x.time}分`, dim: x.done })); ids = l.map(x => x.id);
+        this.dlg.set('查證：要從哪裡確認家屬的說法？（B 返回）');
       } else {
         const l = this.engine.labList();
         items = l.map(x => ({ label: (x.done ? '√' : '') + x.label, right: `${x.time}分`, dim: x.done })); ids = l.map(x => x.id);
@@ -183,8 +205,10 @@ export class ClerkBattleScene extends Phaser.Scene {
       this[`last_${key}`] = pick;
       this.dlg.hide();
       const id = ids[pick];
-      const r = key === 'hx' ? this.engine.ask(id) : key === 'pe' ? this.engine.exam(id) : this.engine.order(id);
+      const e = this.engine;
+      const r = key === 'hx' ? e.ask(id) : key === 'pe' ? e.exam(id) : key === 'tx' ? e.treat(id) : key === 'verify' ? e.verify(id) : e.order(id);
       this.refresh();
+      if (key === 'tx' && !r.penalty) { audio.sfx('heal'); this.patient.setTint(0xd8ffe0); this.time.delayedCall(250, () => this.patient.clearTint()); }
       if (r.penalty) this.floatPenalty(r.penalty);
       if (key === 'lab' && id === 'ECG') this.ecgKnown = true;
       const extra = key === 'pe' && !this.classroom && fx.goldSteth(state.save) && PE_NOTES[id] ? [PE_NOTES[id]] : [];
@@ -209,7 +233,7 @@ export class ClerkBattleScene extends Phaser.Scene {
     this.dlg.set('要向學長報告了嗎？報告後就不能再問診或檢查。');
     if (!(await yesNo(this))) return false;
     const d = this.d;
-    const who = this.isBoss ? '主治' : '學長';
+    const who = this.who;
     await this.dlg.say([`你：「${who}，我來報告這位病人。」`, `${who}：「好，你的診斷是什麼？」`], { keep: true });
 
     this.dlg.set('主診斷是？');
@@ -221,21 +245,32 @@ export class ClerkBattleScene extends Phaser.Scene {
     const pool = shuffle(this.engine.ddxPool().filter(x => x !== dx));
     const ddx = await multiMenu(this, pool, { x: 4, w: 232, visibleRows: 6, y: 110 - (Math.min(6, pool.length + 1) * 14 + 14), depth: 300, need: 3 });
 
+    let dispo = null;
+    if (d.dispo) {
+      const op = shuffle(d.dispo.options);
+      dispo = op[await chooseLong(this, this.dlg, `${who}：「Disposition 呢？病人要怎麼安排？」`, op)];
+      if (dispo === d.dispo.options[0]) { audio.sfx('good'); await this.dlg.say([`${who}：「同意。」`]); }
+      else { audio.sfx('bad'); await this.dlg.say([`${who}：「我會這樣安排：${d.dispo.options[0]}」`, d.dispo.explain]); }
+    }
+
     let next = null; const answers = [];
     if (this.isBoss) {
-      const nx = shuffle(d.boss.next);
-      next = nx[await chooseLong(this, this.dlg, '主治：「那下一步呢？」', nx)];
+      if (d.boss.next) {
+        const nx = shuffle(d.boss.next);
+        next = nx[await chooseLong(this, this.dlg, `${who}：「那下一步呢？」`, nx)];
+      }
       for (const q of d.boss.questions) {
-        await this.dlg.say([`主治：「${q.q}」`]);
+        await this.dlg.say([`${who}：「${q.q}」`]);
         const op = shuffle(q.options);
-        const a = op[await chooseLong(this, this.dlg, `主治：「${q.q}」`, op)];
+        const a = op[await chooseLong(this, this.dlg, `${who}：「${q.q}」`, op)];
         answers.push(a);
-        if (a === q.options[0]) { audio.sfx('good'); await this.dlg.say(['主治：「沒錯。」', q.explain]); }
-        else { audio.sfx('bad'); await this.dlg.say(['主治：「不對喔。」', q.explain]); }
+        if (a === q.options[0]) { audio.sfx('good'); await this.dlg.say([`${who}：「沒錯。」`, q.explain]); }
+        else { audio.sfx('bad'); await this.dlg.say([`${who}：「不對喔。」`, q.explain]); }
       }
     }
 
-    const res = this.engine.report({ dx, ddx, next, answers });
+    if (this.proxy) await this.familyClose();
+    const res = this.engine.report({ dx, ddx, next, answers, dispo });
     if (res.dxOk) {
       audio.sfx('good');
       await this.dlg.say([`${who}：「診斷正確！」`, res.score >= 80 ? `${who}：「依據也很完整，做得好。」` : `${who}：「不過還有一些地方可以更好，我們來看看。」`]);
@@ -245,6 +280,39 @@ export class ClerkBattleScene extends Phaser.Scene {
     }
     this.finish(res);
     return true;
+  }
+
+  // ---------- 家屬代述：開場與說明 ----------
+  async familyOpen() {
+    const px = this.proxy;
+    const me = this.pgy ? 'PGY' : '實習醫學生';
+    await this.dlg.say([`（${px.why}，由${px.who}代述。）`, `${px.who}看起來很焦急，一直看著你。`]);
+    const opts = [
+      `「您好，我是今天負責的${me}。請問您是病人的？我先了解狀況，我們一起把問題弄清楚。」`,
+      '「家屬先到外面等，我們在忙。」',
+      '「放心，一定沒事的啦！」',
+    ];
+    const op = shuffle(opts);
+    const k = await chooseLong(this, this.dlg, '面對焦急的家屬，你會先說：', op);
+    const ok = op[k] === opts[0];
+    this.engine.comm('open', ok);
+    if (ok) { audio.sfx('good'); await this.dlg.say([`${px.who}：「我是${this.engine.patient.sex === '女' ? '她' : '他'}的${px.who}…好，謝謝醫生。」`, '（先自我介紹、確認關係、表達會一起處理，家屬比較能好好回答。）']); }
+    else { audio.sfx('bad'); this.floatPenalty(5); await this.dlg.say([`${px.who}看起來更不安了…`, '（比較好的做法：先自我介紹、確認與病人的關係，並同理家屬的擔心；不要給不實的保證。）']); }
+  }
+
+  async familyClose() {
+    const px = this.proxy;
+    const opts = [
+      '「我說明一下目前的判斷、正在做的治療和接下來的安排。有任何問題都可以問我。」',
+      '「等報告出來再說，現在講您也聽不懂。」',
+      '「這個很嚴重，可能會死，您要有心理準備。」',
+    ];
+    const op = shuffle(opts);
+    const k = await chooseLong(this, this.dlg, `報告完之後，要向${px.who}說明病情：`, op);
+    const ok = op[k] === opts[0];
+    this.engine.comm('close', ok);
+    if (ok) { audio.sfx('good'); await this.dlg.say([`${px.who}：「謝謝醫生，這樣我比較清楚了。」`]); }
+    else { audio.sfx('bad'); await this.dlg.say([`${px.who}：「……」`, '（說明病情要清楚、誠實，包含判斷、治療、下一步與何時會再更新，並邀請家屬提問。）']); }
   }
 
   finish(res) {

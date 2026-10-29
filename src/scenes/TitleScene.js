@@ -3,7 +3,7 @@ import { audio } from '../audio.js';
 import { C } from '../art.js';
 import { txt, textWidth, Dialog, menu, wait, W, H } from '../ui.js';
 import { state, hasSave, load, wipe, persist } from '../save.js';
-import { CLERK_CASES, BOSS_CASE } from '../engine/clerkMenus.js';
+import { CLERK_CASES, BOSS_CASE, PGY_CASES, PGY_BOSS } from '../engine/clerkMenus.js';
 import { adminDevice, afterClassroom } from '../progress.js';
 import { GAME_TITLE, GAME_SUBTITLE, VERSION, AUTHOR } from '../config.js';
 
@@ -136,15 +136,22 @@ export class TitleScene extends Phaser.Scene {
   async classroom() {
     const dlg = new Dialog(this);
     await dlg.say(['【課堂模式】', '直接選一個病例進入，不影響存檔。', '適合投影到螢幕上，全班一起討論每一步。'], { keep: true });
-    const ids = [...CLERK_CASES, BOSS_CASE];
-    const items = ids.map(id => { const c = state.cases[id]; return { label: `${c.dept}｜${c.patient.cc}` }; });
+    const ids = [...CLERK_CASES, BOSS_CASE, ...PGY_CASES, PGY_BOSS].filter(id => state.cases[id]);
+    const items = ids.map(id => { const c = state.cases[id]; return { label: `${c.tier === 'pgy' ? 'PGY' : 'Clerk'}｜${c.dept}｜${c.patient.cc}` }; });
     items.push({ label: '進階預覽｜張力性氣胸（Resident）' });
     dlg.set('選擇病例（B 返回）');
     const i = await menu(this, items, { x: 4, y: 4, w: W - 8, visibleRows: 6 });
+    if (i < 0) { dlg.destroy(); return false; }
+    if (i === ids.length) { dlg.destroy(); this.go('Battle', { caseId: 'tension-ptx', mode: 'resident', classroom: true }); return true; }
+    let proxySeed = null;
+    if (!state.cases[ids[i]].boss) {
+      dlg.set('病史要由誰提供？');
+      const k = await menu(this, [{ label: '病人本人' }, { label: '家屬代述' }], { x: W - 104, y: 60, w: 100, cancel: false });
+      if (k === 1) proxySeed = 1 + Math.floor(Math.random() * 1e9);
+    }
     dlg.destroy();
-    if (i < 0) return false;
-    if (i === ids.length) this.go('Battle', { caseId: 'tension-ptx', mode: 'resident', classroom: true });
-    else { afterClassroom(state.save); persist(); this.go('ClerkBattle', { caseId: ids[i], classroom: true }); }
+    afterClassroom(state.save); persist();
+    this.go('ClerkBattle', { caseId: ids[i], classroom: true, proxySeed });
     return true;
   }
 
@@ -154,6 +161,7 @@ export class TitleScene extends Phaser.Scene {
       `${GAME_TITLE} ${GAME_SUBTITLE} ${VERSION}`,
       `作者：${AUTHOR}`,
       '急診醫師養成像素 RPG：從 Clerk 一路升到主治醫師。',
+      '目前開放：Clerk 篇（一般診區）、PGY 篇（急診留觀區）。',
       '教育用途，非臨床決策依據；案例皆為虛構。',
       '程式碼 MIT 授權；教學內容 CC BY-NC-SA 4.0。',
       '字型：Cubic 11（SIL OFL）。',

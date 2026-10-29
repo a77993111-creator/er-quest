@@ -1,7 +1,7 @@
 // 存檔：只存在本機瀏覽器（localStorage），不收集任何個資
-import { CLERK_CASES, MINICEX } from './engine/clerkMenus.js';
+import { CLERK_CASES, PGY_CASES, MINICEX } from './engine/clerkMenus.js';
 import { makeVariant } from './engine/clerkEngine.js';
-import { ROOMS } from './mapData.js';
+import { AREAS } from './mapData.js';
 import { defaultV3, migrate, coinsForCase, addCoins, afterCase, afterIpass, fx } from './progress.js';
 
 const KEY = 'erquest.save.v2';
@@ -57,24 +57,37 @@ export function wipe() {
 
 // ---------- 等級與職級 ----------
 export const RANK_LABEL = { clerk: 'Clerk', pgy: 'PGY', r1: 'R1', r2: 'R2', r3: 'R3', vs: '主治醫師' };
+export const NEXT_RANK = { clerk: 'pgy', pgy: 'r1', r1: 'r2', r2: 'r3', r3: 'vs' };
+export const tierOf = rank => (rank === 'clerk' ? 'clerk' : 'pgy');   // R1 篇完成前，R1 以上仍在留觀區練習
+export const areaOf = rank => (rank === 'clerk' ? 'clinic' : 'obs');
+export const casesOf = tier => (tier === 'clerk' ? CLERK_CASES : PGY_CASES);
+const EXAM = { clerk: { lv: 10, need: 8 }, pgy: { lv: 20, need: 8 } };
+export const examRule = (rank = state.save.rank) => EXAM[rank] || null;
+
 export function level(exp = state.save.exp) { return 1 + Math.floor(exp / 100); }
 export function rankTitle(s = state.save) {
-  if (s.rank === 'clerk') return level(s.exp) >= 8 ? '準 PGY 的 Clerk' : level(s.exp) >= 4 ? '可靠的 Clerk' : '見習 Clerk';
+  const lv = level(s.exp);
+  if (s.rank === 'clerk') return lv >= 8 ? '準 PGY 的 Clerk' : lv >= 4 ? '可靠的 Clerk' : '見習 Clerk';
+  if (s.rank === 'pgy') return lv >= 18 ? '準 R1 的 PGY' : lv >= 14 ? '可靠的 PGY' : '新手 PGY';
   return RANK_LABEL[s.rank] || s.rank;
 }
-export function passedCount(s = state.save) {
-  return CLERK_CASES.filter(id => PASS.includes(s.cases[id]?.best)).length;
+export function passedCount(s = state.save, tier = tierOf(s.rank)) {
+  return casesOf(tier).filter(id => PASS.includes(s.cases[id]?.best)).length;
 }
 export function examEligible(s = state.save) {
-  return s.rank === 'clerk' && level(s.exp) >= 10 && passedCount(s) >= 8;
+  const r = EXAM[s.rank];
+  return !!r && level(s.exp) >= r.lv && passedCount(s) >= r.need;
 }
 
 // ---------- 班表 ----------
+export const PROXY_RATE = 0.3;
 export function generateShift(s = state.save, cases = state.cases, rnd = Math.random) {
+  const tier = tierOf(s.rank);
+  const LIST = casesOf(tier);
   const passed = id => PASS.includes(s.cases[id]?.best);
   const plays = id => s.cases[id]?.plays || 0;
   const shuffle = a => a.map(x => [rnd(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
-  let cand = shuffle(CLERK_CASES.filter(id => !passed(id))).sort((a, b) => plays(a) - plays(b));
+  let cand = shuffle(LIST.filter(id => !passed(id) && cases[id])).sort((a, b) => plays(a) - plays(b));
   const pick = [];
   for (const id of cand) {
     if (pick.length >= 2) break;
@@ -84,18 +97,22 @@ export function generateShift(s = state.save, cases = state.cases, rnd = Math.ra
   for (const id of cand) { if (pick.length >= 2) break; if (!pick.includes(id)) pick.push(id); }
   // 全部通過後：挑評價最低的案例複習
   if (pick.length < 2) {
-    const rest = shuffle(CLERK_CASES.filter(id => !pick.includes(id)))
+    const rest = shuffle(LIST.filter(id => !pick.includes(id) && cases[id]))
       .sort((a, b) => (GRADE_RANK[s.cases[a]?.best] || 0) - (GRADE_RANK[s.cases[b]?.best] || 0));
-    while (pick.length < 2) pick.push(rest.shift());
+    while (pick.length < 2 && rest.length) pick.push(rest.shift());
+    while (pick.length < 2) pick.push(pick[0] || LIST.find(id => cases[id]));
   }
-  const rooms = shuffle([0, 1, 2, 3]).slice(0, 2).sort();
+  const nRooms = AREAS[areaOf(s.rank)].rooms.length;
+  const rooms = shuffle([...Array(nRooms).keys()]).slice(0, 2).sort((a, b) => a - b);
   s.shift = {
     day: s.day,
+    tier,
     briefed: false,
     ipass: null,
     list: pick.map((id, k) => {
       const v = plays(id) > 0 && cases[id] ? makeVariant(cases[id], rnd) : null;
-      return { id, room: rooms[k], variant: v?.variant || null, vitals: v?.vitals || null, done: false, grade: null };
+      const proxy = rnd() < PROXY_RATE ? 1 + Math.floor(rnd() * 1e9) : null;   // 家屬代述（亂數種子）
+      return { id, room: rooms[k], variant: v?.variant || null, vitals: v?.vitals || null, proxy, done: false, grade: null };
     }),
   };
   s.today = { exp: 0, coins: 0, results: [] };
@@ -106,7 +123,13 @@ export function shiftComplete(s = state.save) {
   return !!s.shift && s.shift.list.every(x => x.done);
 }
 
-export function roomNo(i) { return ROOMS[i].no; }
+export function roomNo(i, rank = state.save.rank) { return AREAS[areaOf(rank)].rooms[i].no; }
+// 班表與職級不符（例如剛升等）且還沒開始看診時，重新排班
+export function shiftStale(s = state.save) {
+  if (!s.shift) return true;
+  const tier = s.shift.tier || 'clerk';
+  return tier !== tierOf(s.rank) && !s.shift.list.some(x => x.done);
+}
 
 // ---------- 結果寫入 ----------
 export function recordClerk(res, shiftIdx = null, isBoss = false) {
@@ -175,4 +198,10 @@ export function nextDay(s = state.save) {
 export function bar9(v) {
   const n = Math.round(v);
   return '■'.repeat(n) + '□'.repeat(9 - n);
+}
+
+// 固定種子的亂數（家屬代述用，同一位病人重新進入時設定一致）
+export function seededRnd(seed) {
+  let n = (seed % 2147483646) + 1;
+  return () => ((n = (n * 16807) % 2147483647) - 1) / 2147483646;
 }

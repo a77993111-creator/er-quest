@@ -44,6 +44,78 @@ export const CLERK_CASES = [
 ];
 export const BOSS_CASE = 'boss-imi';
 
+// ---------- PGY 篇：急診留觀區（在 Clerk 選單之上擴充） ----------
+export const PGY_PE_ITEMS = [
+  ...PE_ITEMS,
+  { id: 'P15', label: '皮膚（灌流、皮疹）' },
+  { id: 'P16', label: 'GCS／NIHSS' },
+];
+
+export const PGY_LAB_ITEMS = [
+  ...LAB_ITEMS.filter(l => l.id !== 'CXR'),
+  { id: 'GAS', label: '血液氣體 VBG/ABG', time: 1, def: 'pH 7.40、PCO₂ 40、HCO₃⁻ 24' },
+  { id: 'LAC', label: 'Lactate', time: 1, def: '1.2 mmol/L' },
+  { id: 'KET', label: '血酮 β-OHB', time: 1, def: '0.2 mmol/L' },
+  { id: 'TYPE', label: '備血 Type & Screen', time: 1, def: '已送備血' },
+  { id: 'CXR', label: 'CXR', time: 2, def: '正常' },
+  { id: 'POCUS', label: '床邊超音波 POCUS', time: 2, def: '心臟收縮正常，IVC 正常，無心包膜積液' },
+  { id: 'CT_HEAD', label: '頭部 CT（非顯影）', time: 8, def: '無出血、無明顯病灶' },
+  { id: 'CTA', label: 'CT 血管攝影', time: 10, def: '無異常' },
+  { id: 'CT_ABD', label: '腹部 CT', time: 10, def: '無異常' },
+];
+
+// 處置：time 為分鐘；cls 由各案例決定（N 必要、O 可接受、H 有害；未列出＝不必要）
+export const PGY_TX_ITEMS = [
+  { id: 'O2', label: '氧氣（鼻導管）' },
+  { id: 'NRM', label: '非再呼吸面罩' },
+  { id: 'NIV', label: 'BiPAP 非侵襲通氣', time: 2 },
+  { id: 'IVF', label: '輸液 30 mL/kg 晶體液', time: 2 },
+  { id: 'IVF_S', label: '輸液 500 mL 試量' },
+  { id: 'ABX', label: '廣效抗生素 IV' },
+  { id: 'INS', label: '胰島素連續滴注' },
+  { id: 'KCL', label: '靜脈補鉀' },
+  { id: 'CAG', label: '葡萄糖酸鈣 IV' },
+  { id: 'SHIFT', label: '胰島素＋葡萄糖（降鉀）' },
+  { id: 'NEB', label: 'β2 吸入（SABA＋SAMA）' },
+  { id: 'STER', label: '全身性類固醇' },
+  { id: 'EPI', label: '腎上腺素 0.5 mg IM' },
+  { id: 'H1', label: '抗組織胺 IV' },
+  { id: 'D50', label: '50% 葡萄糖 IV' },
+  { id: 'THI', label: 'Thiamine IV' },
+  { id: 'PPI', label: 'PPI 靜脈注射' },
+  { id: 'PRBC', label: '輸血 PRBC', time: 2 },
+  { id: 'LASIX', label: 'Furosemide IV' },
+  { id: 'NTG', label: '硝化甘油 NTG' },
+  { id: 'TPA', label: '血栓溶解劑 IV tPA', time: 2 },
+  { id: 'ASA', label: 'Aspirin 口服' },
+  { id: 'HEP', label: 'Heparin 抗凝血' },
+  { id: 'BPLOW', label: '靜脈降血壓藥' },
+  { id: 'NE', label: '升壓劑 Norepinephrine', time: 2 },
+  { id: 'ANALG', label: '止痛（Fentanyl）' },
+  { id: 'NPO', label: '禁食＋監測血糖' },
+  { id: 'FOLEY', label: '導尿（監測尿量）' },
+  { id: 'NG', label: '鼻胃管' },
+  { id: 'NA_HCO3', label: '碳酸氫鈉 IV' },
+];
+
+export const PGY_PE_LABEL = Object.fromEntries(PGY_PE_ITEMS.map(p => [p.id, p.label]));
+export const PGY_LAB_LABEL = Object.fromEntries(PGY_LAB_ITEMS.map(l => [l.id, l.label]));
+export const TX_LABEL = Object.fromEntries(PGY_TX_ITEMS.map(t => [t.id, t.label]));
+
+export const PGY_CASES = [
+  'p01-urosepsis', 'p02-dka', 'p03-ugib', 'p04-copd', 'p05-hyperk',
+  'p06-stroke', 'p07-hypogly', 'p08-anaphylaxis', 'p09-adhf', 'p10-cellulitis',
+];
+export const PGY_BOSS = 'boss-dissection';
+
+// 家屬代述：查證來源
+export const VERIFY_SOURCES = [
+  { id: 'MED', label: '藥袋／雲端藥歷', time: 2 },
+  { id: 'CHART', label: '過去病歷', time: 2 },
+  { id: 'EMS', label: '救護紀錄／目擊者', time: 1 },
+  { id: 'PT', label: '再問病人本人', time: 1 },
+];
+
 export const MINICEX = [
   { key: 'hx', label: '病史詢問' },
   { key: 'pe', label: '身體檢查' },

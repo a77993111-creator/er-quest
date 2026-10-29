@@ -1,5 +1,5 @@
 // 全部美術以程式即時繪製（原創像素圖），不使用外部圖檔
-import { MAP, MAP_W, MAP_H, TILE, FLOORS } from './mapData.js';
+import { AREAS, MAP_W, MAP_H, TILE, FLOORS } from './mapData.js';
 
 // ---------- 調色盤 ----------
 export const C = {
@@ -26,6 +26,10 @@ export const LOOKS = {
   attending: { hair: '#6a6a72', skin: '#eec49c', top: '#f8f8f8', topD: '#c6cedc', pants: '#383848', shoe: '#1a1a20', acc: '#c83838', style: 'short', glasses: true, tie: true },
   docA_L:    { hair: '#3a2c24', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#46587a', shoe: '#2a2a30', acc: '#5a6a80', style: 'short', longCoat: true },
   docB_L:    { hair: '#5a3424', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#46587a', shoe: '#2a2a30', acc: '#5a6a80', style: 'long', longCoat: true },
+  docA_R:    { hair: '#3a2c24', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#3a6ea8', shoe: '#f0f0f0', acc: '#c83838', style: 'short', longCoat: true },
+  docB_R:    { hair: '#5a3424', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#3a6ea8', shoe: '#f0f0f0', acc: '#c83838', style: 'long', longCoat: true },
+  fam_f:     { hair: '#3a2820', skin: '#f2cdb0', top: '#e07878', topD: '#b85858', pants: '#5a5a78', shoe: '#2a2a30', acc: null, style: 'long' },
+  fam_m:     { hair: '#2a2420', skin: '#eec49c', top: '#6a9a6a', topD: '#4a7a4a', pants: '#4a4a5a', shoe: '#2a2a30', acc: null, style: 'short' },
   pt_m:      { hair: '#2a2420', skin: '#f0c8a8', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'short' },
   pt_f:      { hair: '#3a2820', skin: '#f2cdb0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'long' },
   pt_om:     { hair: '#b8b8c0', skin: '#e8c0a0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'short' },
@@ -68,7 +72,8 @@ export function outline(ctx, w, h, col = C.ink) {
 
 // ---------- 地圖 tile ----------
 const isWall = ch => ch === '#' || ch === 's' || ch === 'L' || ch === 'E';
-const at = (x, y) => (y < 0 || y >= MAP_H || x < 0 || x >= MAP_W ? '#' : MAP[y][x]);
+let CUR = AREAS.clinic.map;
+const at = (x, y) => (y < 0 || y >= MAP_H || x < 0 || x >= MAP_W ? '#' : CUR[y][x]);
 
 function baseFor(x, y) {
   for (const [dx, dy] of [[0, 1], [-1, 0], [1, 0], [0, -1], [1, 1], [-1, 1]]) {
@@ -218,7 +223,9 @@ function drawObject(ctx, ch, x, y, ox, oy) {
   }
 }
 
-export function bakeMap(scene) {
+export function bakeMap(scene, areaKey = 'clinic') {
+  const MAP = AREAS[areaKey].map;
+  CUR = MAP;
   const [cv, ctx] = canvas(MAP_W * TILE, MAP_H * TILE);
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const ch = MAP[y][x];
@@ -234,7 +241,7 @@ export function bakeMap(scene) {
       ctx.fillRect(x * TILE, y * TILE, TILE, 3);
     }
   }
-  scene.textures.addCanvas('map', cv);
+  scene.textures.addCanvas('map_' + areaKey, cv);
 }
 
 // ---------- 人物（16×16，四方向 × 3 影格） ----------
@@ -487,9 +494,10 @@ function bakeUi(scene) {
 }
 
 export function bakeAll(scene) {
-  bakeMap(scene);
+  bakeMap(scene, 'clinic');
+  bakeMap(scene, 'obs');
   bakePeople(scene);
   bakePatientExtras(scene);
-  for (const k of ['docA', 'docB', 'docA_L', 'docB_L']) bakeDoctorBack(scene, k, 'back_' + k);
+  for (const k of ['docA', 'docB', 'docA_L', 'docB_L', 'docA_R', 'docB_R']) bakeDoctorBack(scene, k, 'back_' + k);
   bakeUi(scene);
 }

@@ -59,7 +59,7 @@ export class ReportScene extends Phaser.Scene {
       if (rec.levelUp) levelUp = `Lv.${rec.levelUp} ${rankTitle()}`;
     }
     const summary = [];
-    if (res.reason === 'takeover') summary.push('結果：ECG 太晚，病人惡化，主治接手。');
+    if (res.reason === 'takeover') summary.push(c.course ? '結果：處置太慢，病人惡化，總醫師接手。' : '結果：ECG 太晚，病人惡化，主治接手。');
     else if (!res.dxOk) summary.push(`你的診斷：${res.chosenDx || '未報告'}`);
     summary.push(`正確診斷：${res.correctDx}`);
     summary.push(`推理值 ${res.score}　關鍵特徵 ${res.kf}%`);
@@ -75,6 +75,16 @@ export class ReportScene extends Phaser.Scene {
     pages.push({ title: 'Mini-CEX 評量（1–9）', lines: MINICEX.map(m => `${m.label.padEnd(4, '　')} ${bar9(res.minicex[m.key])} ${res.minicex[m.key]}`) });
     pages.push({ title: '做得好', lines: res.goods.length ? res.goods.map(g => '○ ' + g) : ['（這次沒有做到關鍵項目）'] });
     pages.push({ title: '待改進', lines: res.deductions.length ? res.deductions.map(d => `－${d.pts}　${d.text}`) : ['（沒有扣分，太棒了！）'] });
+    if (c.dispo) pages.push({ title: 'Disposition', lines: [`你的安排：${res.dispo || '未決定'}`, `建議：${c.dispo.options[0]}`, c.dispo.explain] });
+    if (res.proxy) {
+      const px = c.proxy || {};
+      pages.push({ title: '家屬代述', lines: [
+        `這次由${res.proxy}代述。`,
+        '家屬的說法常不完整或有出入：用藥查藥袋／雲端藥歷，病史查過去病歷，發作經過問救護人員或目擊者。',
+        ...(px.conflict ? [`本案的出入：${px.conflict.truth}`] : []),
+        '溝通重點：自我介紹、確認關係、同理擔心、不給不實保證；說明時講清楚判斷、治療與下一步。',
+      ] });
+    }
     if (res.bossAnswers) pages.push({ title: '考官追問', lines: res.bossAnswers.map(b => `${b.ok ? '○' : '×'} ${b.q}　${b.explain}`) });
     const tl = res.log.map(l => `${String(l.t).padStart(2, '0')}分　${l.label}`);
     pages.push({ title: '你的看診時間軸', lines: tl.length ? tl : ['（沒有任何動作）'] });
@@ -143,7 +153,7 @@ export class ReportScene extends Phaser.Scene {
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
       if (d.classroom && i === 0) {
-        if (d.kind === 'clerk') this.scene.start('ClerkBattle', { caseId: d.caseId, classroom: true });
+        if (d.kind === 'clerk') this.scene.start('ClerkBattle', { caseId: d.caseId, classroom: true, proxySeed: d.res.proxy ? 1 + Math.floor(Math.random() * 1e9) : null });
         else this.scene.start('Battle', { caseId: d.caseId, mode: d.mode || 'resident', classroom: true });
       } else if (d.classroom) this.scene.start('Title');
       else if (isBossPass) this.scene.start('Evolution', {});
