@@ -1,12 +1,16 @@
 // 急診物語 Service Worker：離線可玩；先回快取、背景更新（stale-while-revalidate）
-const CACHE = 'erquest-v0.1.0';
+const CACHE = 'erquest-v0.2.0';
 const CORE = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'lib/phaser.min.js', 'fonts/Cubic_11.woff2',
   'src/main.js', 'src/input.js', 'src/audio.js', 'src/art.js', 'src/ui.js', 'src/save.js', 'src/config.js', 'src/mapData.js',
   'src/engine/caseEngine.js',
+  'src/engine/clerkEngine.js', 'src/engine/clerkMenus.js',
   'src/scenes/BootScene.js', 'src/scenes/TitleScene.js', 'src/scenes/MapScene.js', 'src/scenes/BattleScene.js', 'src/scenes/ReportScene.js',
+  'src/scenes/ClerkBattleScene.js', 'src/scenes/IpassScene.js', 'src/scenes/DayReportScene.js', 'src/scenes/EvolutionScene.js',
   'data/cases/tension-ptx.json',
+  ...['c01-af', 'c02-hf', 'c03-cap', 'c04-asthma', 'c05-pud', 'c06-panc', 'c07-pyelo', 'c08-aki', 'c09-appy', 'c10-chole', 'boss-imi']
+    .map(id => `data/cases/clerk/${id}.json`),
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png',
 ];
 

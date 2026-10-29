@@ -1,0 +1,78 @@
+// 進化過場：Clerk → PGY（短白袍換成長白袍）。全部程式即時繪製。
+import { audio } from '../audio.js';
+import { txt, Dialog, wait, textWidth, W, H } from '../ui.js';
+import { state, persist } from '../save.js';
+
+export class EvolutionScene extends Phaser.Scene {
+  constructor() { super('Evolution'); }
+
+  create() {
+    const s = state.save;
+    this.cameras.main.setBackgroundColor('#0e1424');
+    this.cameras.main.fadeIn(600, 0, 0, 0);
+    this.base = s.look.replace('_L', '');
+    // 光柱與粒子
+    this.beam = this.add.rectangle(W / 2, 0, 40, H * 2, 0xfff4c0, 0).setOrigin(0.5, 0);
+    this.glow = this.add.circle(W / 2, 70, 30, 0xfff8d8, 0);
+    this.before = this.add.sprite(W / 2, 92, 'p_' + this.base, 0).setScale(4).setOrigin(0.5, 1);
+    this.after = this.add.sprite(W / 2, 92, 'p_' + this.base + '_L', 0).setScale(4).setOrigin(0.5, 1).setAlpha(0);
+    this.badge = txt(this, 0, 98, 'Clerk', '#c8d8f0');
+    this.badge.setX(Math.round((W - this.badge.width) / 2));
+    this.dlg = new Dialog(this);
+    audio.stop();
+    this.run();
+  }
+
+  sparkle(n = 16) {
+    for (let i = 0; i < n; i++) {
+      const p = this.add.image(W / 2 + (Math.random() * 80 - 40), 92, 'spark').setScale(1 + Math.random());
+      this.tweens.add({ targets: p, y: 10 + Math.random() * 40, x: p.x + (Math.random() * 60 - 30), alpha: 0, duration: 900 + Math.random() * 700, onComplete: () => p.destroy() });
+    }
+  }
+
+  async run() {
+    await wait(this, 500);
+    await this.dlg.say(['主治：「恭喜你通過升等考。」', '主治：「從今天起，你要穿上這件長白袍了。」']);
+    // 光柱升起
+    this.tweens.add({ targets: this.beam, fillAlpha: 0.35, duration: 900 });
+    this.tweens.add({ targets: this.glow, fillAlpha: 0.5, radius: 46, duration: 1200, yoyo: true, repeat: 2 });
+    // 長白袍由上而下披上，閃爍漸快
+    audio.sfx('siren');
+    let gap = 380;
+    for (let i = 0; i < 9; i++) {
+      this.after.setAlpha(1); this.before.setAlpha(0);
+      audio.sfx('cursor');
+      await wait(this, gap * 0.5);
+      this.after.setAlpha(0); this.before.setAlpha(1);
+      await wait(this, gap * 0.5);
+      gap *= 0.78;
+      if (i % 2 === 0) this.sparkle(6);
+    }
+    this.cameras.main.flash(700, 255, 255, 240);
+    this.before.setAlpha(0); this.after.setAlpha(1);
+    this.badge.setText('PGY').setColor('#f8e070');
+    this.badge.setX(Math.round((W - this.badge.width) / 2));
+    this.sparkle(30);
+    audio.sfx('heal');
+    await wait(this, 400);
+    audio.sfx('win');
+    this.tweens.add({ targets: this.after, y: 88, duration: 400, yoyo: true, repeat: 1 });
+    await wait(this, 900);
+
+    // 寫入存檔
+    const s = state.save;
+    s.rank = 'pgy';
+    s.look = this.base + '_L';
+    s.flags.evolved = true;
+    persist();
+
+    await this.dlg.say([
+      '★ 恭喜！你從 Clerk 晉升為 PGY！',
+      '新指令：影像檢查、常規處置、Disposition 建議。',
+      '新區域：急診留觀區。',
+      '（PGY 篇正在開發中，敬請期待！現在仍可回一般診區繼續練習。）',
+    ]);
+    this.cameras.main.fadeOut(600, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Map', { evolved: true }));
+  }
+}

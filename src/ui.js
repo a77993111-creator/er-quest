@@ -201,6 +201,7 @@ export async function menu(scene, items, opt = {}) {
   render();
   input.flush();
   uiState.menu += 1;
+  uiState.labels = items.map(it => it.label);
   let result;
   for (;;) {
     const k = await input.next();
@@ -222,4 +223,48 @@ export async function menu(scene, items, opt = {}) {
 export async function yesNo(scene, opt = {}) {
   const r = await menu(scene, [{ label: '是' }, { label: '否' }], { x: W - 52, y: 110 - 46, cancel: true, ...opt });
   return r === 0;
+}
+
+// ---------- 複選選單：A 勾選／取消，選滿 need 個後選「確定」 ----------
+export async function multiMenu(scene, labels, opt = {}) {
+  const need = opt.need || 3;
+  const chosen = new Set();
+  let start = 0;
+  for (;;) {
+    const items = labels.map((l, i) => ({ label: (chosen.has(i) ? '■ ' : '□ ') + l }));
+    items.push({ label: chosen.size === need ? '→ 確定' : `（已選 ${chosen.size}／${need}）`, dim: chosen.size !== need });
+    const i = await menu(scene, items, { ...opt, start, cancel: false });
+    start = i;
+    if (i === labels.length) {
+      if (chosen.size === need) return [...chosen].map(k => labels[k]);
+      audio.sfx('bump');
+      continue;
+    }
+    if (chosen.has(i)) chosen.delete(i);
+    else if (chosen.size < need) chosen.add(i);
+    else audio.sfx('bump');
+  }
+}
+
+export function shuffle(a, rnd = Math.random) {
+  return a.map(x => [rnd(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
+}
+
+// ---------- 長選項選擇：上方顯示題目，選單只列代號，游標停在哪個選項，下方對話框就顯示它的全文 ----------
+export async function chooseLong(scene, dlg, prompt, options, opt = {}) {
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const objs = [];
+  const promptLines = wrap(prompt, W - 24);
+  const ph = promptLines.length * LINE_H + 12;
+  objs.push(makeWindow(scene, 2, 2, W - 4, ph, opt.theme || 'paper', 280));
+  promptLines.forEach((l, i) => objs.push(txt(scene, 12, 8 + i * LINE_H, l).setScrollFactor(0).setDepth(281)));
+  const items = options.map((_, i) => ({ label: `選項 ${letters[i]}` }));
+  const h = items.length * LINE_H + 14;
+  uiState.long = options.slice();
+  const i = await menu(scene, items, {
+    x: W - 76, w: 74, y: 110 - h, cancel: false, depth: 300,
+    onMove: k => dlg.set(`${letters[k]}. ${options[k]}`),
+  });
+  objs.forEach(o => o.destroy());
+  return i;
 }

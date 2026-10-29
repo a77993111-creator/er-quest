@@ -24,6 +24,12 @@ export const LOOKS = {
   senior:    { hair: '#1e1e24', skin: '#eec49c', top: '#5878c8', topD: '#4060a0', pants: '#5878c8', shoe: '#2a2a30', acc: '#9aa8b8', style: 'short' },
   rad:       { hair: '#3a3028', skin: '#f0c8a0', top: '#70b088', topD: '#508868', pants: '#506070', shoe: '#2a2a30', acc: '#e0d040', style: 'short' },
   attending: { hair: '#6a6a72', skin: '#eec49c', top: '#f8f8f8', topD: '#c6cedc', pants: '#383848', shoe: '#1a1a20', acc: '#c83838', style: 'short', glasses: true, tie: true },
+  docA_L:    { hair: '#3a2c24', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#46587a', shoe: '#2a2a30', acc: '#5a6a80', style: 'short', longCoat: true },
+  docB_L:    { hair: '#5a3424', skin: '#f6cfa6', top: '#f8f8f8', topD: '#c6cedc', pants: '#46587a', shoe: '#2a2a30', acc: '#5a6a80', style: 'long', longCoat: true },
+  pt_m:      { hair: '#2a2420', skin: '#f0c8a8', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'short' },
+  pt_f:      { hair: '#3a2820', skin: '#f2cdb0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'long' },
+  pt_om:     { hair: '#b8b8c0', skin: '#e8c0a0', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'short' },
+  pt_of:     { hair: '#c0c0c8', skin: '#ecc4a4', top: '#a8c8e8', topD: '#88a8d0', pants: '#a8c8e8', shoe: '#e8e8e8', acc: null, style: 'bun' },
   chief:     { hair: '#2a2420', skin: '#f0c49c', top: '#f8f8f8', topD: '#c6cedc', pants: '#605048', shoe: '#2a2a30', acc: '#4a90d0', style: 'long' },
 };
 
@@ -60,7 +66,7 @@ function outline(ctx, w, h, col = C.ink) {
 }
 
 // ---------- 地圖 tile ----------
-const isWall = ch => ch === '#' || ch === 's' || ch === 'L';
+const isWall = ch => ch === '#' || ch === 's' || ch === 'L' || ch === 'E';
 const at = (x, y) => (y < 0 || y >= MAP_H || x < 0 || x >= MAP_W ? '#' : MAP[y][x]);
 
 function baseFor(x, y) {
@@ -107,7 +113,7 @@ function drawFloor(ctx, ch, x, y, ox, oy) {
 
 function drawWall(ctx, ch, x, y, ox, oy) {
   const below = at(x, y + 1);
-  if (isWall(below) || y === MAP_H - 1) {
+  if ((isWall(below) || y === MAP_H - 1) && ch === '#') {
     r(ctx, ox, oy, 16, 16, C.wallTop);
     r(ctx, ox, oy, 16, 1, C.wallTopL);
     return;
@@ -122,6 +128,11 @@ function drawWall(ctx, ch, x, y, ox, oy) {
     r(ctx, ox + 2, oy + 4, 12, 8, C.ink);
     r(ctx, ox + 3, oy + 5, 10, 6, '#f6eed0');
     r(ctx, ox + 7, oy + 6, 2, 4, C.red); r(ctx, ox + 6, oy + 7, 4, 2, C.red);
+  } else if (ch === 'E') {
+    r(ctx, ox + 1, oy + 2, 14, 14, C.ink);
+    r(ctx, ox + 2, oy + 3, 12, 13, '#c84848');
+    r(ctx, ox + 7, oy + 3, 1, 13, '#902830');
+    r(ctx, ox + 3, oy + 5, 3, 3, '#f8f8f8'); r(ctx, ox + 4, oy + 4, 1, 5, '#f8f8f8');
   } else if (ch === 'L') {
     r(ctx, ox + 2, oy + 2, 12, 14, C.ink);
     r(ctx, ox + 3, oy + 3, 10, 13, '#8a6040');
@@ -250,6 +261,10 @@ function person(ctx, ox, oy, dir, frame, L) {
       else if (L.acc && L.top === '#f8f8f8') { dot(c, 6, 9, L.acc); dot(c, 9, 9, L.acc); dot(c, 6, 10, L.acc); dot(c, 9, 10, L.acc); dot(c, 7, 11, L.acc); }
     }
   }
+  if (L.longCoat) {
+    if (side) { r(c, 5, 12, 6, 2, L.top); r(c, 5, 13, 6, 1, L.topD); }
+    else { r(c, 7, 12, 2, 2, L.pants); r(c, 4, 12, 3, 2, L.top); r(c, 9, 12, 3, 2, L.top); r(c, 4, 13, 3, 1, L.topD); r(c, 9, 13, 3, 1, L.topD); }
+  }
   // 頭
   if (side) r(c, 5, 2, 7, 6, L.skin); else r(c, 4, 2, 8, 6, L.skin);
   // 頭髮
@@ -294,41 +309,67 @@ export function bakePeople(scene) {
 }
 
 // ---------- 對戰用大圖（48×48） ----------
-function bakePatient(scene) {
+// 病人肖像：依性別、年齡、疼痛部位產生
+export function bakePortrait(scene, key, opt = {}) {
+  if (scene.textures.exists(key)) return key;
+  const { sex = '男', old = false, pose = 'chest', abrasion = false } = opt;
   const [cv, c] = canvas(48, 48);
-  const skin = '#f0c8a8', skinD = '#d8a888', gown = '#a8c8e8', gownD = '#88a8d0', hair = '#2a2420';
+  const skin = old ? '#e8c0a0' : '#f0c8a8', skinD = old ? '#c8a080' : '#d8a888', gown = '#a8c8e8', gownD = '#88a8d0';
+  const hair = old ? (sex === '男' ? '#b8b8c0' : '#c4c4cc') : (sex === '男' ? '#2a2420' : '#3a2820');
   // 擔架
   r(c, 2, 38, 44, 6, '#e8ecf2'); r(c, 2, 38, 44, 1, C.white); r(c, 2, 43, 44, 1, '#b8c0cc');
   r(c, 5, 44, 2, 4, '#7a8494'); r(c, 41, 44, 2, 4, '#7a8494');
+  // 女性長髮在身後
+  if (sex !== '男' && !old) { r(c, 14, 8, 20, 18, hair); }
   // 身體（病人服）
   r(c, 10, 24, 28, 15, gown);
   r(c, 12, 22, 24, 3, gown);
   r(c, 22, 24, 4, 14, gownD);
   for (const [x, y] of [[14, 28], [18, 33], [30, 27], [33, 34], [15, 36], [29, 36]]) dot(c, x, y, '#ffffff');
-  // 右胸擦傷（病人的右側＝畫面左側）
-  r(c, 13, 26, 5, 1, '#d05050'); r(c, 14, 28, 4, 1, '#d05050'); r(c, 15, 30, 3, 1, '#c04848');
-  // 手按住胸口
-  r(c, 15, 27, 9, 4, skin); r(c, 15, 27, 9, 1, '#f8d8c0'); r(c, 16, 31, 6, 1, skinD);
-  r(c, 23, 30, 4, 8, gown); r(c, 24, 31, 2, 6, gownD);
-  // 另一隻手
+  if (abrasion) { r(c, 13, 26, 5, 1, '#d05050'); r(c, 14, 28, 4, 1, '#d05050'); r(c, 15, 30, 3, 1, '#c04848'); }
+  // 手的位置依疼痛部位
+  if (pose === 'chest') {
+    r(c, 15, 27, 9, 4, skin); r(c, 15, 27, 9, 1, '#f8d8c0'); r(c, 16, 31, 6, 1, skinD);
+    r(c, 23, 30, 4, 8, gown); r(c, 24, 31, 2, 6, gownD);
+  } else if (pose === 'abdomen') {
+    r(c, 16, 33, 10, 4, skin); r(c, 16, 33, 10, 1, '#f8d8c0');
+    r(c, 11, 26, 4, 9, gown); r(c, 12, 35, 4, 2, skin);
+  } else if (pose === 'back') {
+    r(c, 10, 26, 4, 10, gown); r(c, 8, 34, 3, 3, skin);
+  } else {
+    r(c, 10, 26, 4, 10, gown); r(c, 10, 36, 4, 2, skin);
+  }
   r(c, 34, 26, 4, 10, gown); r(c, 34, 36, 4, 2, skin);
-  // 脖子
+  // 脖子、頭
   r(c, 20, 19, 8, 4, skin); r(c, 20, 21, 8, 1, skinD);
-  // 頭
   ellipse(c, 24, 12, 8, 9, skin);
-  r(c, 16, 5, 16, 4, hair); r(c, 16, 9, 2, 4, hair); r(c, 30, 9, 2, 4, hair);
-  r(c, 18, 4, 12, 2, hair);
-  // 痛苦表情：皺眉、閉眼、張口
+  if (sex === '男') {
+    r(c, 16, 5, 16, 4, hair); r(c, 16, 9, 2, 4, hair); r(c, 30, 9, 2, 4, hair); r(c, 18, 4, 12, 2, hair);
+  } else if (old) {
+    r(c, 16, 4, 16, 5, hair); r(c, 15, 8, 3, 6, hair); r(c, 30, 8, 3, 6, hair); ellipse(c, 24, 3, 4, 2, hair);
+  } else {
+    r(c, 16, 4, 16, 5, hair); r(c, 15, 8, 3, 10, hair); r(c, 30, 8, 3, 10, hair);
+  }
+  if (old) { r(c, 18, 15, 2, 1, skinD); r(c, 28, 15, 2, 1, skinD); }
+  // 不舒服的表情
   r(c, 19, 10, 3, 1, C.ink); r(c, 26, 10, 3, 1, C.ink);
   dot(c, 21, 9, C.ink); dot(c, 26, 9, C.ink);
   r(c, 19, 12, 3, 1, C.ink); r(c, 26, 12, 3, 1, C.ink);
-  r(c, 22, 16, 4, 3, '#802830'); r(c, 22, 16, 4, 1, C.ink);
-  // 臉色蒼白＋冒汗
+  r(c, 22, 16, 4, 2, '#802830'); r(c, 22, 16, 4, 1, C.ink);
   r(c, 17, 13, 2, 1, '#e8b8b0'); r(c, 29, 13, 2, 1, '#e8b8b0');
-  for (const [x, y] of [[14, 8], [33, 11], [31, 5]]) { dot(c, x, y, '#78c0f0'); dot(c, x, y + 1, '#a8e0ff'); }
+  for (const [x, y] of [[14, 8], [33, 11]]) { dot(c, x, y, '#78c0f0'); dot(c, x, y + 1, '#a8e0ff'); }
   outline(c, 48, 48);
-  scene.textures.addCanvas('patient', cv);
+  scene.textures.addCanvas(key, cv);
+  return key;
+}
 
+export function portraitKey(p) {
+  const old = p.age >= 65;
+  return `pt_${p.sex === '男' ? 'm' : 'f'}_${old ? 'o' : 'y'}_${p.pose || 'none'}`;
+}
+
+function bakePatientExtras(scene) {
+  bakePortrait(scene, 'patient', { sex: '男', old: false, pose: 'chest', abrasion: true });
   // 氧氣面罩（疊在臉上）
   const [mv, m] = canvas(48, 48);
   ellipse(m, 24, 16, 5, 4, 'rgba(220,240,255,0.85)');
@@ -336,7 +377,6 @@ function bakePatient(scene) {
   r(m, 15, 15, 4, 1, '#9ab8d0'); r(m, 29, 15, 4, 1, '#9ab8d0');
   r(m, 23, 20, 2, 8, '#58b058');
   scene.textures.addCanvas('o2mask', mv);
-
   // 胸管（處置後顯示）
   const [tv, t] = canvas(48, 48);
   r(t, 8, 30, 2, 12, '#d0e8f0'); r(t, 8, 30, 2, 1, '#a0c0d0'); r(t, 6, 41, 6, 6, '#e0f0f8'); r(t, 6, 41, 6, 1, '#9ab8d0');
@@ -393,8 +433,7 @@ function bakeUi(scene) {
 export function bakeAll(scene) {
   bakeMap(scene);
   bakePeople(scene);
-  bakePatient(scene);
-  bakeDoctorBack(scene, 'docA', 'back_docA');
-  bakeDoctorBack(scene, 'docB', 'back_docB');
+  bakePatientExtras(scene);
+  for (const k of ['docA', 'docB', 'docA_L', 'docB_L']) bakeDoctorBack(scene, k, 'back_' + k);
   bakeUi(scene);
 }

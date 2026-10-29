@@ -1,8 +1,9 @@
 export const GAME_TITLE = '急診物語';
 export const GAME_SUBTITLE = 'ER QUEST';
-export const VERSION = 'v0.1.0';
+export const VERSION = 'v0.2.0';
 export const AUTHOR = 'Dr. Lo';
 export const CASES = ['tension-ptx'];
+export const ENDGAME_NOTE = 'PGY 篇開發中';
 
 // 胸痛館圖鑑槽位（v0.1 只有 No.001 可遊玩）
 export const DEX_SLOTS = [

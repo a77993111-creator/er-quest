@@ -5,6 +5,10 @@ import { TitleScene } from './scenes/TitleScene.js';
 import { MapScene, syncMuteButton } from './scenes/MapScene.js';
 import { BattleScene } from './scenes/BattleScene.js';
 import { ReportScene } from './scenes/ReportScene.js';
+import { ClerkBattleScene } from './scenes/ClerkBattleScene.js';
+import { IpassScene } from './scenes/IpassScene.js';
+import { DayReportScene } from './scenes/DayReportScene.js';
+import { EvolutionScene } from './scenes/EvolutionScene.js';
 import { W, H, FONT } from './ui.js';
 
 async function start() {
@@ -35,7 +39,7 @@ async function start() {
     input: { keyboard: false, mouse: false, touch: false },
     audio: { noAudio: true },
     banner: false,
-    scene: [BootScene, TitleScene, MapScene, BattleScene, ReportScene],
+    scene: [BootScene, TitleScene, MapScene, BattleScene, ReportScene, ClerkBattleScene, IpassScene, DayReportScene, EvolutionScene],
   });
   window.__game = game;
   document.getElementById('loading')?.remove();

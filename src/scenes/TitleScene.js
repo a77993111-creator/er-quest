@@ -2,7 +2,8 @@ import { input } from '../input.js';
 import { audio } from '../audio.js';
 import { C } from '../art.js';
 import { txt, textWidth, Dialog, menu, wait, W, H } from '../ui.js';
-import { state, hasSave, load, wipe, persist, MODE_LABEL } from '../save.js';
+import { state, hasSave, load, wipe, persist } from '../save.js';
+import { CLERK_CASES, BOSS_CASE } from '../engine/clerkMenus.js';
 import { GAME_TITLE, GAME_SUBTITLE, VERSION, AUTHOR } from '../config.js';
 
 export class TitleScene extends Phaser.Scene {
@@ -90,17 +91,6 @@ export class TitleScene extends Phaser.Scene {
     }
   }
 
-  async chooseMode(dlg) {
-    const desc = [
-      'Clerk 模式：問診、理學檢查、鑑別診斷，最後向學長報告。時間較寬鬆。',
-      'Resident 模式：親自下 Order、做處置、決定去向。時間壓力大！',
-    ];
-    const i = await menu(this, [{ label: MODE_LABEL.clerk }, { label: MODE_LABEL.resident }], {
-      x: 60, y: 48, w: 120, onMove: k => dlg.set(desc[k]),
-    });
-    return i < 0 ? null : (i === 0 ? 'clerk' : 'resident');
-  }
-
   async newGame() {
     const dlg = new Dialog(this);
     if (hasSave()) {
@@ -127,17 +117,14 @@ export class TitleScene extends Phaser.Scene {
       else if (k === 'B') { audio.sfx('cancel'); [shade, a, b, pickTxt, sel].forEach(o => o.destroy()); dlg.destroy(); return false; }
     }
     [a, b, pickTxt, sel].forEach(o => o.destroy());
-    dlg.set('請選擇遊玩模式。');
-    const mode = await this.chooseMode(dlg);
-    if (!mode) { shade.destroy(); dlg.destroy(); return false; }
     await dlg.say([
       '【開始之前】',
       '本遊戲為醫學教育用途，內容為簡化的教學情境，不能作為臨床決策依據。',
       '所有案例皆為虛構，不含任何真實病人資料。',
+      '你將從 Clerk 開始，一天看兩位病人，通過升等考後晉升 PGY。',
     ]);
     wipe();
     state.save.look = look === 0 ? 'docA' : 'docB';
-    state.save.mode = mode;
     persist();
     this.go('Map', { newGame: true });
     return true;
@@ -145,12 +132,16 @@ export class TitleScene extends Phaser.Scene {
 
   async classroom() {
     const dlg = new Dialog(this);
-    await dlg.say(['【課堂模式】', '直接進入病例、不影響存檔。', '適合投影到螢幕上，全班一起討論每一步。'], { keep: true });
-    dlg.set('請選擇模式。');
-    const mode = await this.chooseMode(dlg);
+    await dlg.say(['【課堂模式】', '直接選一個病例進入，不影響存檔。', '適合投影到螢幕上，全班一起討論每一步。'], { keep: true });
+    const ids = [...CLERK_CASES, BOSS_CASE];
+    const items = ids.map(id => { const c = state.cases[id]; return { label: `${c.dept}｜${c.patient.cc}` }; });
+    items.push({ label: '進階預覽｜張力性氣胸（Resident）' });
+    dlg.set('選擇病例（B 返回）');
+    const i = await menu(this, items, { x: 4, y: 4, w: W - 8, visibleRows: 6 });
     dlg.destroy();
-    if (!mode) return false;
-    this.go('Battle', { caseId: 'tension-ptx', mode, classroom: true });
+    if (i < 0) return false;
+    if (i === ids.length) this.go('Battle', { caseId: 'tension-ptx', mode: 'resident', classroom: true });
+    else this.go('ClerkBattle', { caseId: ids[i], classroom: true });
     return true;
   }
 
@@ -159,7 +150,7 @@ export class TitleScene extends Phaser.Scene {
     await dlg.say([
       `${GAME_TITLE} ${GAME_SUBTITLE} ${VERSION}`,
       `作者：${AUTHOR}`,
-      '急診住院醫師養成像素 RPG。',
+      '急診醫師養成像素 RPG：從 Clerk 一路升到主治醫師。',
       '教育用途，非臨床決策依據；案例皆為虛構。',
       '程式碼 MIT 授權；教學內容 CC BY-NC-SA 4.0。',
       '字型：Cubic 11（SIL OFL）。',

@@ -1,14 +1,18 @@
 import { input } from '../input.js';
 import { audio } from '../audio.js';
 import { C, DIR_ORDER } from '../art.js';
-import { MAP, MAP_W, MAP_H, TILE, SOLID, ENCOUNTER, START, NPCS, SIGNS, OBJECT_TEXT } from '../mapData.js';
-import { txt, Dialog, menu, yesNo, makeWindow, wait, W, H, wrap } from '../ui.js';
-import { state, persist, wipe, level, rankTitle, MODE_LABEL } from '../save.js';
-import { DEX_SLOTS } from '../config.js';
+import { MAP, MAP_W, MAP_H, TILE, SOLID, START, BED_SPOT, NPCS, SIGNS, OBJECT_TEXT, roomPatientSpot } from '../mapData.js';
+import { txt, Dialog, menu, yesNo, makeWindow, wait, W, H } from '../ui.js';
+import {
+  state, persist, wipe, level, rankTitle, RANK_LABEL, passedCount, examEligible, generateShift, shiftComplete,
+  roomNo, minicexAvg, bar9,
+} from '../save.js';
+import { CLERK_CASES, BOSS_CASE, MINICEX } from '../engine/clerkMenus.js';
 
 const DELTA = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0] };
 const OPP = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
 const frameOf = (dir, f) => DIR_ORDER.indexOf(dir) * 3 + f;
+const ptLook = p => (p.age >= 65 ? (p.sex === '男' ? 'pt_om' : 'pt_of') : (p.sex === '男' ? 'pt_m' : 'pt_f'));
 
 export class MapScene extends Phaser.Scene {
   constructor() { super('Map'); }
@@ -19,15 +23,22 @@ export class MapScene extends Phaser.Scene {
     this.moving = false;
     this.stepParity = 0;
     this.turnUntil = 0;
+    if (!this.s.shift) generateShift();
 
     this.add.image(0, 0, 'map').setOrigin(0, 0).setDepth(0);
 
-    this.npcs = NPCS.map(n => {
-      const sp = this.add.sprite(n.x * TILE, n.y * TILE, 'p_' + n.look, frameOf(n.dir, 0)).setOrigin(0, 0).setDepth(10 + n.y);
-      return { ...n, sp };
+    this.npcs = NPCS.map(n => this.addNpc(n));
+    // 今天班表上的病人
+    this.s.shift.list.forEach((e, idx) => {
+      if (e.done) return;
+      const c = state.cases[e.id];
+      const p = { ...c.patient, ...(e.variant || {}) };
+      const spot = roomPatientSpot(e.room);
+      this.npcs.push(this.addNpc({ id: 'pt', idx, x: spot.x, y: spot.y, dir: 'DOWN', look: ptLook(p), name: p.name }));
     });
 
-    const p = this.s.pos || START;
+    let p = this.s.pos || START;
+    if (data?.newDay || data?.newGame) p = data.newGame ? START : BED_SPOT;
     this.px = p.x; this.py = p.y; this.dir = p.dir || 'UP';
     this.player = this.add.sprite(this.px * TILE, this.py * TILE, 'p_' + this.s.look, frameOf(this.dir, 0))
       .setOrigin(0, 0).setDepth(10 + this.py);
@@ -39,13 +50,16 @@ export class MapScene extends Phaser.Scene {
     cam.fadeIn(300, 0, 0, 0);
 
     this.dlg = new Dialog(this);
+    this.hud = txt(this, 4, 3, '', '#ffffff').setScrollFactor(0).setDepth(400);
+    this.hudBg = this.add.rectangle(0, 0, W, 18, 0x18203a, 0.75).setOrigin(0).setScrollFactor(0).setDepth(399);
+    this.updateHud();
     audio.play('map');
 
-    // 偶爾讓 NPC 轉頭，讓畫面有生氣
     this.time.addEvent({
-      delay: 2200, loop: true, callback: () => {
+      delay: 2400, loop: true, callback: () => {
         if (this.busy) return;
-        const n = Phaser.Utils.Array.GetRandom(this.npcs.filter(x => x.id !== 'nurse'));
+        const n = Phaser.Utils.Array.GetRandom(this.npcs.filter(x => x.id === 'chief' || x.id === 'pt'));
+        if (!n) return;
         n.dir = Phaser.Utils.Array.GetRandom(DIR_ORDER);
         n.sp.setFrame(frameOf(n.dir, 0));
       },
@@ -54,17 +68,41 @@ export class MapScene extends Phaser.Scene {
     this.intro(data || {});
   }
 
+  addNpc(n) {
+    const sp = this.add.sprite(n.x * TILE, n.y * TILE, 'p_' + n.look, frameOf(n.dir, 0)).setOrigin(0, 0).setDepth(10 + n.y);
+    return { ...n, sp };
+  }
+
+  updateHud() {
+    const s = this.s;
+    const left = s.shift.list.filter(x => !x.done).length;
+    const task = !s.shift.briefed ? '找總醫師晨會' : left ? `待看病人 ${left} 位` : s.shift.ipass == null ? '找總醫師交班' : '去值班室休息';
+    this.hud.setText(`第${s.day}天 ${RANK_LABEL[s.rank]} Lv.${level()}｜${task}`);
+  }
+
   async intro(data) {
     await wait(this, 350);
     if (data.newGame) {
       await this.dlg.say([
-        '（急診的自動門打開了…）',
-        '總醫師：「歡迎來到急診！今天起你就是急診的一員。」',
-        '「先去入口旁的檢傷站，找護理師報到吧！」',
+        '（一般診區的早晨，候診椅已經坐了不少人…）',
+        '總醫師：「歡迎！你是這梯的 Clerk 吧？」',
+        '「每天早上先來找我晨會，我會分配今天要看的病人。」',
         '【操作】方向鍵移動　A：對話／確認　B：取消　START：選單',
       ]);
+    } else if (data.newDay) {
+      await this.dlg.say([`第 ${this.s.day} 天早上。精神值完全恢復了！`, '先去找總醫師晨會吧。']);
+    } else if (data.evolved) {
+      await this.dlg.say(['長白袍穿起來，感覺就是不一樣。', '總醫師：「恭喜升上 PGY！PGY 篇正在準備中。」']);
+    } else if (data.fromIpass) {
+      // 交班後直接回到地圖
     } else if (data.fromBattle) {
-      if (this.s.energy < 30) await this.dlg.say(['（好累…去值班室休息一下吧。）']);
+      if (shiftComplete()) await this.dlg.say(['今天的病人都看完了！', '下班前記得找總醫師交班。']);
+      else if (this.s.energy < 30) await this.dlg.say(['（好累…還有病人要看，撐住！）']);
+    }
+    if (examEligible() && !this.s.flags.examNotified) {
+      this.s.flags.examNotified = true;
+      persist();
+      await this.dlg.say(['總醫師：「你已經有資格參加升等考了！」', '「準備好就去右下的主治辦公室。」']);
     }
     this.busy = false;
   }
@@ -78,7 +116,6 @@ export class MapScene extends Phaser.Scene {
     const presses = input.poll();
     if (presses.includes('START')) { this.run(() => this.startMenu()); return; }
     if (presses.includes('A')) { this.run(() => this.interact()); return; }
-    // 按住方向鍵：連續走；快速點一下：面向同方向就走一格，否則只轉身
     const taps = presses.filter(k => DELTA[k]);
     const tap = taps[taps.length - 1] || null;
     const held = input.heldDir();
@@ -113,25 +150,24 @@ export class MapScene extends Phaser.Scene {
     this.tweens.add({
       targets: this.player, x: nx * TILE, y: ny * TILE, duration: 150,
       onUpdate: (tw) => { if (tw.progress > 0.5) this.player.setFrame(frameOf(d, 0)); },
-      onComplete: () => {
-        this.px = nx; this.py = ny;
-        this.player.setDepth(10 + ny);
-        this.moving = false;
-        this.afterStep();
-      },
+      onComplete: () => { this.px = nx; this.py = ny; this.player.setDepth(10 + ny); this.moving = false; },
     });
-  }
-
-  afterStep() {
-    const t = this.tileAt(this.px, this.py);
-    if (ENCOUNTER.has(t) && this.s.flags.tutorial && Math.random() < 0.12) {
-      this.run(() => this.encounter());
-    }
   }
 
   async run(fn) {
     this.busy = true;
-    try { await fn(); } finally { this.busy = false; input.flush(); }
+    try { await fn(); } finally { this.busy = false; this.updateHud(); input.flush(); }
+  }
+
+  savePos() { this.s.pos = { x: this.px, y: this.py, dir: this.dir }; }
+
+  go(key, data) {
+    this.busy = true;
+    this.savePos();
+    persist();
+    audio.stop();
+    this.cameras.main.fadeOut(300, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start(key, data));
   }
 
   // ---------- 調查 / 對話 ----------
@@ -139,7 +175,7 @@ export class MapScene extends Phaser.Scene {
     const [dx, dy] = DELTA[this.dir];
     let tx = this.px + dx, ty = this.py + dy;
     let npc = this.npcAt(tx, ty);
-    if (!npc && this.tileAt(tx, ty) === 'c') npc = this.npcAt(tx + dx, ty + dy); // 隔著櫃台說話
+    if (!npc && this.tileAt(tx, ty) === 'c') npc = this.npcAt(tx + dx, ty + dy);
     if (npc) {
       npc.dir = OPP[this.dir];
       npc.sp.setFrame(frameOf(npc.dir, 0));
@@ -151,99 +187,100 @@ export class MapScene extends Phaser.Scene {
     const key = `${tx},${ty}`;
     if (SIGNS[key]) { await this.dlg.say(SIGNS[key]); return; }
     if (ch === 'r') { await this.rest(); return; }
+    if (ch === 'L') { await this.examDoor(); return; }
     if (OBJECT_TEXT[ch]) await this.dlg.say(OBJECT_TEXT[ch]);
+  }
+
+  patientLine(e) {
+    const c = state.cases[e.id];
+    const p = { ...c.patient, ...(e.variant || {}) };
+    return `第 ${roomNo(e.room)} 診間：${p.name}，${p.age} 歲，${c.patient.cc}。`;
   }
 
   async talk(npc) {
     const s = this.s;
-    const won = Object.values(s.dex).some(d => d.wins > 0);
+    const sh = s.shift;
+    if (npc.id === 'pt') {
+      if (!sh.briefed) { await this.dlg.say(['病人：「醫生，我在等看診…」', '（先去找總醫師晨會，確認今天負責的病人。）']); return; }
+      const e = sh.list[npc.idx];
+      this.dlg.set(`要幫 ${npc.name} 看診嗎？`);
+      if (await yesNo(this)) { this.dlg.hide(); this.go('ClerkBattle', { caseId: e.id, shiftIdx: npc.idx }); }
+      else this.dlg.hide();
+      return;
+    }
     switch (npc.id) {
-      case 'nurse':
-        if (!s.flags.tutorial) {
+      case 'chief': {
+        if (!sh.briefed) {
           await this.dlg.say([
-            '檢傷護理師：「你就是新來的醫師吧？」',
-            '「入口這邊的黃色區域是候診區，走進去隨時會有病人找上你。」',
-            '「也可以直接跟我說，我幫你叫下一位病人。」',
+            `總醫師：「早安！第 ${s.day} 天晨會開始。」`,
+            '「今天你負責兩位病人：」',
+            ...sh.list.map(e => this.patientLine(e)),
+            '「問診、PE 要有重點，檢查不要亂開。看完要跟學長報告診斷和鑑別診斷。」',
           ]);
-          s.flags.tutorial = true;
+          sh.briefed = true;
           persist();
+        } else if (!shiftComplete()) {
+          const left = sh.list.filter(e => !e.done);
+          await this.dlg.say(['總醫師：「還有病人在等你喔。」', ...left.map(e => this.patientLine(e))]);
+        } else if (sh.ipass == null) {
+          this.dlg.set('總醫師：「病人都看完了。要交班了嗎？」');
+          if (await yesNo(this)) {
+            this.dlg.hide();
+            const idx = Math.floor(Math.random() * sh.list.length);
+            this.go('Ipass', { idx });
+          } else this.dlg.hide();
+        } else {
+          await this.dlg.say(['總醫師：「今天辛苦了！去值班室的床上休息吧。」']);
         }
-        this.dlg.set('檢傷護理師：「要看下一位病人嗎？」');
-        if (await yesNo(this)) { this.dlg.hide(); await this.encounter(); }
-        else await this.dlg.say(['「好，準備好再跟我說。」']);
         break;
-      case 'senior':
-        await this.dlg.say(won
-          ? ['學長：「聽說你處理了張力性氣胸，做得不錯！」', '「記住：臨床診斷，不等影像。」']
-          : [
-            '學長：「急診看病就像一場對戰。」',
-            '「問診、理學檢查、檢查、處置——每個指令都會花時間。」',
-            '「病人不會等你。監視器上的數字要一直盯著。」',
-            '「卡住就按『呼叫學長』，不過會扣分喔。」',
-          ]);
-        break;
-      case 'resus':
-        await this.dlg.say(['急救室護理師：「胸管包、穿刺針、插管盤都準備好了！」', '「需要的話隨時把病人推進來。」']);
-        break;
-      case 'rad':
-        await this.dlg.say(['放射師：「不穩定的病人不要送來 CT 喔。」', '「這台機器被叫作『死亡隧道』不是沒有原因的。」']);
-        break;
-      case 'chief':
+      }
+      case 'nurse':
         await this.dlg.say([
-          '總醫師：「按 START 可以打開選單：圖鑑、醫師卡、存檔。」',
-          `「你現在的精神值是 ${s.energy}／100。」`,
-          s.energy < 50 ? '「看起來很累了，去左下的值班室休息吧。」' : '「看起來還很有精神！」',
+          '診區護理師：「Clerk 加油！」',
+          '「聽說學長最在意的是：紅旗症狀有沒有問、PE 有沒有做到重點。」',
+          '「檢查開太多也會被念喔。」',
         ]);
         break;
       case 'boss':
-        await this.dlg.say(['心臟科主治：「胸痛館的挑戰還沒開放。」']);
+        await this.dlg.say(['（主治在辦公室裡看論文。）']);
         break;
     }
   }
 
-  async rest() {
-    this.dlg.set('要休息一下嗎？（恢復精神值並存檔）');
-    if (!(await yesNo(this))) { this.dlg.hide(); return; }
-    this.dlg.hide();
-    const cam = this.cameras.main;
-    cam.fadeOut(400, 0, 0, 0);
-    await wait(this, 500);
-    this.s.energy = 100;
-    this.savePos();
-    persist();
-    audio.sfx('heal');
-    await wait(this, 600);
-    cam.fadeIn(400, 0, 0, 0);
-    await wait(this, 400);
-    audio.sfx('save');
-    await this.dlg.say(['精神值完全恢復了！', '進度已經存檔。']);
+  async examDoor() {
+    const s = this.s;
+    if (s.rank !== 'clerk') { await this.dlg.say(['【主治辦公室】', '升等考已經通過了！']); return; }
+    if (!examEligible()) {
+      await this.dlg.say(['【主治辦公室】升等考', `資格：Lv.10（目前 Lv.${level()}）`, `　　　10 案中 8 案拿到 B 以上（目前 ${passedCount()} 案）`]);
+      return;
+    }
+    this.dlg.set('門上寫著「升等考」。要挑戰嗎？');
+    if (await yesNo(this)) { this.dlg.hide(); this.go('ClerkBattle', { caseId: BOSS_CASE }); }
+    else this.dlg.hide();
   }
 
-  savePos() { this.s.pos = { x: this.px, y: this.py, dir: this.dir }; }
-
-  // ---------- 遇到病人 ----------
-  async encounter() {
-    this.busy = true;
-    this.savePos();
-    persist();
-    audio.stop();
-    audio.sfx('siren');
-    const mark = txt(this, this.player.x + 5, this.player.y - 14, '！', C.red).setDepth(500);
-    await wait(this, 500);
-    mark.destroy();
-    const cam = this.cameras.main;
-    for (let i = 0; i < 3; i++) { cam.flash(120, 255, 255, 255); await wait(this, 180); }
-    // 橫條轉場
-    const g = this.add.graphics().setScrollFactor(0).setDepth(900);
-    for (let k = 0; k <= 10; k++) {
-      g.clear(); g.fillStyle(0x000000, 1);
-      for (let row = 0; row < H; row += 16) {
-        const w = (W * k) / 10;
-        if ((row / 16) % 2) g.fillRect(W - w, row, w, 16); else g.fillRect(0, row, w, 16);
-      }
-      await wait(this, 30);
+  async rest() {
+    if (shiftComplete() && this.s.shift.ipass != null) {
+      this.dlg.set('今天的工作都完成了。要下班休息嗎？');
+      if (await yesNo(this)) {
+        this.dlg.hide();
+        this.s.pos = { ...BED_SPOT };
+        persist();
+        audio.stop();
+        this.cameras.main.fadeOut(500, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('DayReport'));
+        await wait(this, 2000);
+      } else this.dlg.hide();
+      return;
     }
-    this.scene.start('Battle', { caseId: 'tension-ptx', mode: this.s.mode });
+    this.dlg.set('還有工作沒完成。要先存檔嗎？');
+    if (await yesNo(this)) {
+      this.dlg.hide();
+      this.savePos();
+      persist();
+      audio.sfx('save');
+      await this.dlg.say(['進度已經存檔。']);
+    } else this.dlg.hide();
   }
 
   // ---------- START 選單 ----------
@@ -251,7 +288,7 @@ export class MapScene extends Phaser.Scene {
     audio.sfx('select');
     for (;;) {
       const i = await menu(this, [{ label: '疾病圖鑑' }, { label: '醫師卡' }, { label: '存檔' }, { label: '設定' }, { label: '關閉' }],
-        { x: W - 82, y: 4, w: 78, keep: false });
+        { x: W - 82, y: 20, w: 78 });
       if (i === 0) await this.dex();
       else if (i === 1) await this.card();
       else if (i === 2) {
@@ -264,81 +301,61 @@ export class MapScene extends Phaser.Scene {
   }
 
   async dex() {
-    const items = DEX_SLOTS.map(slot => {
-      const d = this.s.dex[slot.id];
-      const c = state.cases[slot.id];
-      const caught = d && d.wins > 0 && c;
-      const no = 'No.' + String(slot.no).padStart(3, '0');
-      return { label: `${no} ${caught ? c.dex.name : '？？？？'}`, right: caught ? (d.best || '') : (d ? '遇過' : ''), slot, caught };
+    const ids = [...CLERK_CASES, BOSS_CASE];
+    const items = ids.map((id, k) => {
+      const c = state.cases[id];
+      const d = this.s.cases[id];
+      const caught = d && d.wins > 0;
+      return { label: `No.${String(k + 1).padStart(3, '0')} ${caught ? c.dex.name : '？？？？'}`, right: d?.best ? d.best : (d ? '遇過' : ''), id, caught };
     });
     const objs = [makeWindow(this, 2, 2, W - 4, 20, 'paper', 280)];
-    objs.push(txt(this, 10, 6, '疾病圖鑑・胸痛館', C.ink).setScrollFactor(0).setDepth(281));
+    objs.push(txt(this, 10, 6, '疾病圖鑑・一般診區', C.ink).setScrollFactor(0).setDepth(281));
     const got = items.filter(x => x.caught).length;
-    objs.push(txt(this, W - 52, 6, `${got}/${items.length}`, '#806040').setScrollFactor(0).setDepth(281));
+    const cnt = txt(this, 0, 6, `${got}/${items.length}`, '#806040').setScrollFactor(0).setDepth(281);
+    cnt.setX(W - 12 - cnt.width);
+    objs.push(cnt);
     for (;;) {
       const i = await menu(this, items, { x: 2, y: 24, w: W - 4, visibleRows: 6, depth: 290 });
       if (i < 0) break;
       const it = items[i];
-      if (it.caught) {
-        const c = state.cases[it.slot.id];
-        await this.dlg.say([`${c.dex.name} ${c.dex.en}`, c.dex.desc, `最佳評價：${this.s.dex[it.slot.id].best}　治療次數：${this.s.dex[it.slot.id].wins}`]);
-      } else await this.dlg.say(['尚未登錄。', '成功治療這種疾病的病人，就會登錄到圖鑑。']);
+      const c = state.cases[it.id];
+      if (it.caught) await this.dlg.say([`${c.dex.name}　${c.dex.en}`, c.dex.desc, `科別：${c.dept}　最佳評價：${this.s.cases[it.id].best}`]);
+      else await this.dlg.say(['尚未登錄。', '成功診斷這種疾病（通過）後，就會登錄到圖鑑。']);
     }
     objs.forEach(o => o.destroy());
   }
 
   async card() {
     const s = this.s;
-    const objs = [makeWindow(this, 8, 8, W - 16, H - 16, 'paper', 280)];
+    const objs = [makeWindow(this, 4, 4, W - 8, H - 8, 'paper', 280)];
     const add = o => { objs.push(o.setScrollFactor(0).setDepth(281)); return o; };
-    add(txt(this, 18, 14, '醫師卡', '#806040'));
-    add(this.add.sprite(52, 64, 'p_' + s.look, 0).setScale(3));
-    const caught = Object.values(s.dex).filter(d => d.wins > 0).length;
+    add(txt(this, 14, 10, '醫師卡', '#806040'));
+    add(this.add.sprite(40, 64, 'p_' + s.look, 0).setScale(3));
+    const avg = minicexAvg();
     const lines = [
-      `模式　${MODE_LABEL[s.mode]}`,
-      `等級　Lv.${level()} ${rankTitle()}`,
-      `經驗　${s.exp} EXP`,
-      `精神　${s.energy}／100`,
-      `圖鑑　${caught}／${DEX_SLOTS.length}`,
-      `看診　${s.plays} 位病人`,
+      `職級　${RANK_LABEL[s.rank]}（${rankTitle()}）`,
+      `等級　Lv.${level()}　${s.exp} EXP`,
+      `天數　第 ${s.day} 天　看診 ${s.plays} 次`,
+      `通過　${passedCount()}/10 案（B 以上）`,
+      ...MINICEX.map(m => `${m.label.slice(0, 2)}　${bar9(avg[m.key])}`),
     ];
-    lines.forEach((l, i) => add(txt(this, 92, 32 + i * 15, l)));
-    add(txt(this, 18, 112, '徽章'));
-    add(this.add.image(52, 118, 'badge0').setOrigin(0, 0));
-    add(txt(this, 70, 112, '胸痛館（尚未取得）', '#9a8a70'));
+    lines.forEach((l, i) => add(txt(this, 76, 26 + i * 14, l)));
     input.flush();
     for (;;) { const k = await input.next(); if (k === 'A' || k === 'B') break; }
     audio.sfx('cancel');
     objs.forEach(o => o.destroy());
   }
 
-  // 回傳 true 表示已離開場景
   async settings() {
     for (;;) {
-      const s = this.s;
-      const items = [
-        { label: '切換模式', right: s.mode === 'clerk' ? 'Clerk' : 'Resident' },
-        { label: '音效', right: audio.muted ? '關' : '開' },
-        { label: '刪除存檔' },
-        { label: '返回' },
-      ];
-      const i = await menu(this, items, { x: W - 130, y: 4, w: 126 });
-      if (i === 0) {
-        s.mode = s.mode === 'clerk' ? 'resident' : 'clerk';
-        persist();
-        await this.dlg.say([`已切換為 ${MODE_LABEL[s.mode]}。`, s.mode === 'clerk' ? '著重問診、理學檢查與報告。' : '親自處置，時間壓力更大！']);
-      } else if (i === 1) {
-        audio.setMuted(!audio.muted);
-        syncMuteButton();
-      } else if (i === 2) {
+      const items = [{ label: '音效', right: audio.muted ? '關' : '開' }, { label: '刪除存檔' }, { label: '返回' }];
+      const i = await menu(this, items, { x: W - 110, y: 20, w: 106 });
+      if (i === 0) { audio.setMuted(!audio.muted); syncMuteButton(); }
+      else if (i === 1) {
         this.dlg.set('確定要刪除存檔嗎？無法復原。');
         const ok = await menu(this, [{ label: '刪除' }, { label: '取消' }], { x: W - 60, y: 60 });
         this.dlg.hide();
-        if (ok === 0) {
-          wipe();
-          this.scene.start('Title');
-          return true;
-        }
+        if (ok === 0) { wipe(); this.scene.start('Title'); return true; }
       } else return false;
     }
   }
