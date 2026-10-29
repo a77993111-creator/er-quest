@@ -5,6 +5,7 @@ import { txt, wrap, makeWindow, wait, W, H, LINE_H } from '../ui.js';
 import { state, persist, level, rankTitle, passedCount, minicexAvg, bar9, nextDay, examEligible, snapshotMinicex, examRule } from '../save.js';
 import { afterDay, fx } from '../progress.js';
 import { MINICEX } from '../engine/clerkMenus.js';
+import { PROC_BY_ID } from '../procedures/data.js';
 
 export class DayReportScene extends Phaser.Scene {
   constructor() { super('DayReport'); }
@@ -36,6 +37,7 @@ export class DayReportScene extends Phaser.Scene {
       [
         ...results,
         `交班 I-PASS：${s.shift?.ipass ?? '—'} 分`,
+        s.today.procs?.length ? `Procedure：${s.today.procs.map(x => `${PROC_BY_ID[x.id]?.name || x.id} ${x.grade}`).join('、')}` : '',
         `今日 EXP +${s.today.exp}　白袍幣 +${s.today.coins || 0}（持有 ${s.coins}）`,
         `Lv.${level()}　${rankTitle()}　（${s.exp} EXP）`,
         examRule() ? `升等考：Lv ${Math.min(level(), examRule().lv)}/${examRule().lv}、B 以上 ${passedCount()}/${examRule().need} 案` : '',

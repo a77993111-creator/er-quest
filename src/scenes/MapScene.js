@@ -9,6 +9,7 @@ import {
 } from '../save.js';
 import { CLERK_CASES, BOSS_CASE, PGY_CASES, PGY_BOSS, MINICEX } from '../engine/clerkMenus.js';
 import { SLOTS, RARITY, ITEMS, PETS, BADGES, UNLOCK_TEXT } from '../cosmetics.js';
+import { PROCS, PROC_BY_ID, PROC_DAILY_MAX } from '../procedures/data.js';
 import { equipFor, fx, owns, itemById, dailyReset, addCoins, SPEEDS, adminDevice } from '../progress.js';
 
 const COFFEE_PRICE = 30;
@@ -198,7 +199,7 @@ export class MapScene extends Phaser.Scene {
     this.tweens.add({
       targets: this.player, x: nx * TILE, y: ny * TILE, duration: dur,
       onUpdate: (tw) => { if (tw.progress > 0.5) this.player.setFrame(frameOf(d, 0)); },
-      onComplete: () => { this.px = nx; this.py = ny; this.player.setDepth(10 + ny); this.moving = false; },
+      onComplete: () => { this.px = nx; this.py = ny; this.player.setDepth(10 + ny); this.moving = false; this.maybeProc(); },
     });
   }
 
@@ -591,18 +592,73 @@ export class MapScene extends Phaser.Scene {
   async startMenu() {
     audio.sfx('select');
     for (;;) {
-      const i = await menu(this, [{ label: '疾病圖鑑' }, { label: '醫師卡' }, { label: '背包' }, { label: '存檔' }, { label: '設定' }, { label: '關閉' }],
-        { x: W - 82, y: 20, w: 78 });
+      const i = await menu(this, [{ label: '疾病圖鑑' }, { label: '醫師卡' }, { label: '技能護照' }, { label: '背包' }, { label: '存檔' }, { label: '設定' }, { label: '關閉' }],
+        { x: W - 82, y: 20, w: 78, visibleRows: 7 });
       if (i === 0) await this.dex();
       else if (i === 1) await this.card();
-      else if (i === 2) await this.bag();
-      else if (i === 3) {
+      else if (i === 2) await this.passport();
+      else if (i === 3) await this.bag();
+      else if (i === 4) {
         this.savePos();
         if (persist()) { audio.sfx('save'); await this.dlg.say(['進度已經存檔！']); }
         else await this.dlg.say(['存檔失敗（瀏覽器可能封鎖了儲存空間）。']);
-      } else if (i === 4) { if (await this.settings()) return; }
+      } else if (i === 5) { if (await this.settings()) return; }
       else return;
     }
+  }
+
+  // ---------- Procedure：走廊隨機遭遇 ----------
+  maybeProc() {
+    const s = this.s;
+    if (this.busy) return;
+    this.stepsSinceProc = (this.stepsSinceProc || 0) + 1;
+    if ((s.daily?.procs || 0) >= PROC_DAILY_MAX) return;
+    if (!s.shift?.briefed) return;
+    if (this.tileAt(this.px, this.py) !== '.') return;
+    const force = window.__erqForceProc;
+    if (!force && (this.stepsSinceProc < 12 || Math.random() > 1 / 45)) return;
+    this.stepsSinceProc = 0;
+    this.run(() => this.procEncounter(typeof force === 'string' ? force : null));
+  }
+
+  async procEncounter(pid) {
+    const s = this.s;
+    s.procs = s.procs || {};
+    if (!pid) {
+      const pool = PROCS.map(p => ({ id: p.id, w: Math.random() + 1 / (1 + (s.procs[p.id]?.n || 0)) })).sort((a, b) => b.w - a.w);
+      pid = pool[0].id;
+    }
+    const p = PROC_BY_ID[pid];
+    const ask = p.asks[Math.floor(Math.random() * p.asks.length)];
+    // 護理師從旁邊跑過來
+    const [dx, dy] = DELTA[OPP[this.dir]];
+    const nurse = this.add.sprite((this.px + dx * 3) * TILE, (this.py + dy * 3) * TILE, 'p_nurse', frameOf(this.dir, 0)).setOrigin(0, 0).setDepth(30);
+    this.tweens.add({ targets: nurse, x: (this.px + dx) * TILE, y: (this.py + dy) * TILE, duration: 350 });
+    const bang = txt(this, this.player.x + 5, this.player.y - 14, '！', '#c84848').setDepth(31);
+    audio.sfx('beep', { f: 1200 });
+    await wait(this, 450);
+    s.daily.procs = (s.daily.procs || 0) + 1;
+    persist();
+    await this.dlg.say([`護理師：${ask}`], { keep: true });
+    this.dlg.set(`要去做「${p.name}」嗎？（今天第 ${s.daily.procs}/${PROC_DAILY_MAX} 次）`);
+    const yes = await yesNo(this);
+    bang.destroy();
+    if (yes) { this.dlg.hide(); nurse.destroy(); this.go('Procedure', { pid, ask }); return; }
+    await this.dlg.say(['護理師：「好，那我去找別人幫忙！」']);
+    this.tweens.add({ targets: nurse, alpha: 0, duration: 300, onComplete: () => nurse.destroy() });
+  }
+
+  async passport() {
+    const s = this.s;
+    const items = PROCS.map(p => ({ label: p.name, right: s.procs?.[p.id] ? `${s.procs[p.id].best}・${s.procs[p.id].n} 次` : '—' }));
+    for (;;) {
+      this.dlg.set('技能護照：走在走廊上，護理師可能會找你做 procedure（每天最多 3 次）。');
+      const i = await menu(this, items, { x: 2, y: 20, w: W - 4, visibleRows: 6 });
+      if (i < 0) break;
+      const p = PROCS[i];
+      await this.dlg.say([`【${p.name}】${p.en}`, ...p.teach]);
+    }
+    this.dlg.hide();
   }
 
   async dex() {

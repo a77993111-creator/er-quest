@@ -1,6 +1,6 @@
 {
   "name": "er-quest",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "急診物語 ER Quest — 急診住院醫師養成像素 RPG",

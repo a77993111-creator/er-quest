@@ -19,7 +19,8 @@ export function defaultV3() {
     stats: { redflagStreak: 0, kfStreak: 0, dxStreak: 0, ipassPerfect: 0, fullDayStreak: 0, ecgFast: 0, classroom: 0, daysWorked: 0 },
     settings: { textSpeed: 'mid', walk: 'normal' },
     admin: false,
-    daily: { day: 0, freeCoffee: false, wbcBonus: false },
+    daily: { day: 0, freeCoffee: false, wbcBonus: false, procs: 0 },
+    procs: {},
     inventory: { coffee: 0 },
     minicexDaily: [],
   };
@@ -165,7 +166,7 @@ export function afterClassroom(s) {
 // ---------- 每日 ----------
 export function dailyReset(s) {
   if (s.daily.day === s.day) return;
-  s.daily = { day: s.day, freeCoffee: false, wbcBonus: false };
+  s.daily = { day: s.day, freeCoffee: false, wbcBonus: false, procs: 0 };
 }
 
 // 福利社每日特賣：依天數固定亂數，6 件尚未擁有的商品
