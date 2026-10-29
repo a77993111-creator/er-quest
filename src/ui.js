@@ -86,8 +86,11 @@ export class Dialog {
     this.theme = opt.theme ?? 'normal';
     this.g = scene.add.graphics().setDepth(this.depth).setScrollFactor(0);
     this.texts = [];
+    // 3 行時行距 13px，最後一行才不會壓到視窗下框（內框高 h − 8）
+    const lh = Math.min(LINE_H, Math.floor((this.h - 10) / this.lines));
+    const top = this.y + 4 + Math.max(0, Math.floor((this.h - 8 - lh * this.lines) / 2)) - 1;
     for (let i = 0; i < this.lines; i++) {
-      this.texts.push(txt(scene, this.x + 9, this.y + 6 + i * LINE_H, '').setDepth(this.depth + 1).setScrollFactor(0));
+      this.texts.push(txt(scene, this.x + 9, top + i * lh, '').setDepth(this.depth + 1).setScrollFactor(0));
     }
     this.more = scene.add.image(this.x + this.w - 13, this.y + this.h - 10, 'more').setOrigin(0, 0)
       .setDepth(this.depth + 1).setScrollFactor(0).setVisible(false);

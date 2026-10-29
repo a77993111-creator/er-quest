@@ -16,7 +16,7 @@ async function start() {
   try {
     await Promise.race([
       Promise.all([document.fonts.load(`12px ${FONT}`, '急診物語'), document.fonts.load(`24px ${FONT}`, '急診物語')]),
-      new Promise(r => setTimeout(r, 4000)),
+      new Promise(r => setTimeout(r, 10000)),
     ]);
   } catch (_) {}
 

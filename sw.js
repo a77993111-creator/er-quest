@@ -1,5 +1,5 @@
 // 急診物語 Service Worker：離線可玩；先回快取、背景更新（stale-while-revalidate）
-const CACHE = 'erquest-v0.4.0';
+const CACHE = 'erquest-v0.4.1';
 const CORE = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'lib/phaser.min.js', 'fonts/Cubic_11.woff2',
